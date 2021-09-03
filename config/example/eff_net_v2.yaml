@@ -1,0 +1,89 @@
+#
+# EfficientNet-V2 specific options
+# Should be copied into 'hparams' section in training configuration file
+#
+
+# available values: s | m | l
+net_type:
+
+# s
+phases_s:
+  - image_size: 200
+    dropout_rate: 0.1
+    augment_rate: 0.2
+    batch_size:
+    epoch_milestone:
+
+  - image_size: 260
+    dropout_rate: 0.17
+    augment_rate: 0.33
+    batch_size:
+    epoch_milestone:
+
+  - image_size: 320
+    dropout_rate: 0.24
+    augment_rate: 0.46
+    batch_size:
+    epoch_milestone:
+
+  - image_size: 380
+    dropout_rate: 0.3
+    augment_rate: 0.6
+    batch_size:
+    epoch_milestone:
+
+# m
+phases_m:
+  - image_size: 200
+    dropout_rate: 0.1
+    augment_rate: 0.2
+    batch_size:
+    epoch_milestone: 0
+
+  - image_size: 260
+    dropout_rate: 0.2
+    augment_rate: 0.4
+    batch_size:
+    epoch_milestone:
+
+  - image_size: 320
+    dropout_rate: 0.3
+    augment_rate: 0.6
+    batch_size:
+    epoch_milestone:
+
+  - image_size: 380
+    dropout_rate: 0.4
+    augment_rate: 0.8
+    batch_size:
+    epoch_milestone:
+
+# l
+phases_l:
+  - image_size: 200
+    dropout_rate: 0.1
+    augment_rate: 0.2
+    batch_size: 70
+    epoch_milestone: 0
+
+  - image_size: 260
+    dropout_rate: 0.24
+    augment_rate: 0.47
+    batch_size: 42
+    epoch_milestone: 10
+
+  - image_size: 320
+    dropout_rate: 0.38
+    augment_rate: 0.74
+    batch_size: 30
+    epoch_milestone: 15
+
+  - image_size: 380
+    dropout_rate: 0.5
+    augment_rate: 1.0
+    batch_size: 20
+    epoch_milestone: 20
+
+drop_path_rate: 0.2
+
+

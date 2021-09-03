@@ -1,0 +1,11 @@
+
+
+# available values: 0-7
+net_type: 1
+
+phases:
+    - image_size: 300
+      dropout_rate: 0.3
+      augment_rate: 0.8
+      batch_size: 32
+      epoch_milestone: 0

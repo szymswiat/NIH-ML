@@ -1,0 +1,29 @@
+
+#
+# Data params
+#
+data:
+  dataset_path: /net/archive/groups/plggxrays/NihDataset
+  # dataset_path: /media/DATA_SSD/datasets/nih_dataset
+  df_dir: df_split_files
+
+  # df_prefix: custom
+  df_prefix: orig
+
+
+#
+# Testing params
+#
+testing:
+
+  log_dir: lightning_logs
+  job_name: test
+  version: testing
+
+  architecture: eff_net_v2
+
+  ckpt_file:
+
+  params:
+    batch_size: 4
+    image_size: 380

@@ -1,0 +1,14 @@
+albumentations==0.5.2
+efficientnet-pytorch==0.6.3
+monai==0.4.0
+pandas==1.0.0
+opencv-python==4.5.1.48
+pytorch-lightning==1.4.2
+scikit-learn==0.24.0
+torch==1.9.0
+torchvision==0.8.2
+test-tube==0.7.5
+timm==0.4.12
+torchmetrics==0.4.1
+psutil-5.8.0
+neptune-client-0.10.4
