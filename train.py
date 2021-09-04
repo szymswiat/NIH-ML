@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 import pytorch_lightning as pl
+import torch
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
@@ -57,27 +58,16 @@ def train(cfg: DictConfig, is_hpc_exp=False):
     #
     callbacks = []
 
-    ckpt_params = dict(
-        dirpath=checkpoint_dir,
-        verbose=True,
-        save_top_k=3,
-        auto_insert_metric_name=False
-    )
-    top_auc_ckpt_cb = ModelCheckpoint(
+    max_auc_ckpt_cb = ModelCheckpoint(
         filename='epoch={epoch}_val_auroc={auroc_avg/val:.3f}_top',
         monitor='auroc_avg/val',
         mode='max',
-        **ckpt_params
+        dirpath=checkpoint_dir,
+        verbose=True,
+        save_top_k=1,
+        auto_insert_metric_name=False
     )
-    callbacks.append(top_auc_ckpt_cb)
-
-    min_loss_ckpt_cb = ModelCheckpoint(
-        filename='epoch={epoch}_val_loss={loss/val:.5f}_top',
-        monitor='loss/val',
-        mode='min',
-        **ckpt_params
-    )
-    callbacks.append(min_loss_ckpt_cb)
+    callbacks.append(max_auc_ckpt_cb)
 
     es_cb = EarlyStopping(
         monitor="auroc_avg/val",
@@ -138,15 +128,17 @@ def train(cfg: DictConfig, is_hpc_exp=False):
     else:
         raise ValueError()
 
-    trainer = Trainer(
-        max_epochs=cfg.hparams.epochs,
-        logger=ClearMLLogger(task),
+    trainer_params_cluster = dict(
         gpus=cfg.cluster.gpus_per_node,
         num_nodes=cfg.cluster.nodes_per_exp,
         accelerator='ddp',
         deterministic=True,
         progress_bar_refresh_rate=0 if is_hpc_exp else None,
         prepare_data_per_node=True,
+    )
+    trainer_params_common = dict(
+        max_epochs=cfg.hparams.epochs,
+        logger=ClearMLLogger(task),
         num_sanity_val_steps=0,
         callbacks=callbacks,
         weights_save_path=checkpoint_dir,
@@ -156,11 +148,29 @@ def train(cfg: DictConfig, is_hpc_exp=False):
         log_every_n_steps=25,
         limit_val_batches=0 if cfg.data.merge_train_val else 1.0
     )
+    trainer = Trainer(
+        **trainer_params_common,
+        **trainer_params_cluster
+    )
 
     trainer.fit(model, datamodule=dm)
 
-    if cfg.training.test_after_training:
-        trainer.test(model, datamodule=dm)
+    if cfg.hparams.architecture == 'eff_net_v2':
+        best_model_name = Path(max_auc_ckpt_cb.best_model_path)
+        best_model_path = checkpoint_dir / (best_model_name.stem + '.pt')
+        model = EfficientNetV2Module.load_from_checkpoint(checkpoint_dir / best_model_name,
+                                                          num_classes=NIHDataModule.NUM_CLASSES,
+                                                          class_freq=dm.get_train_class_freq())
+        torch.save(model.state_dict(), best_model_path)
+        task.update_output_model(str(best_model_path), tags=['auroc_best'])
+
+    trainer_params_cluster['gpus'] = 1
+    trainer = Trainer(
+        **trainer_params_common,
+        **trainer_params_cluster
+    )
+
+    trainer.test(model, datamodule=dm)
 
     task.flush()
 

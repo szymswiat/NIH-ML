@@ -12,6 +12,7 @@ from sklearn.metrics import roc_curve, auc
 from timm.models.efficientnet import tf_efficientnetv2_s, tf_efficientnetv2_m, tf_efficientnetv2_l
 from torch import nn
 from torchmetrics import AUROC
+from torchmetrics.utilities.data import dim_zero_cat
 
 from losses.focal_loss import FocalLoss
 from optimizers.over9000 import RangerLars
@@ -68,16 +69,18 @@ class EfficientNetV2Module(pl.LightningModule):
         return self.last_activation(self.model(x))
 
     def training_step(self, batch, batch_idx):
-        optimizer = self.optimizers()
-        for i, group in enumerate(optimizer.param_groups):
-            self.log(f'lr/param_group_{i}', group['lr'], on_step=True, on_epoch=False, logger=True, prog_bar=True)
+        if self.trainer.is_global_zero:
+            optimizer = self.optimizers()
+            for i, group in enumerate(optimizer.param_groups):
+                self.log(f'lr/param_group_{i}', group['lr'], on_step=True, on_epoch=False,
+                         logger=True, prog_bar=True, rank_zero_only=True)
 
         x, y_true = batch
         y_pred = self.model(x)
 
         loss = self.criterion(y_pred, y_true)
 
-        self.log('loss/train', loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log('loss/train', loss, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
 
@@ -93,25 +96,38 @@ class EfficientNetV2Module(pl.LightningModule):
 
         loss = self.criterion(y_pred, y_true)
 
-        self.log('loss/val', loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log('loss/val', loss, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
         self.val_auroc(self.last_activation(y_pred), y_true.to(dtype=torch.int))
 
     def validation_epoch_end(self, outputs: List[Any]) -> None:
-        preds = torch.cat(self.val_auroc.preds, dim=0).detach().cpu().numpy()
-        targets = torch.cat(self.val_auroc.target, dim=0).detach().cpu().numpy()
+        self.cml_logger.report_text(msg=f'Syncing val auroc.')
+        self.val_auroc.sync()
+        preds = dim_zero_cat(self.val_auroc.preds).detach().cpu().numpy()
+        targets = dim_zero_cat(self.val_auroc.target).detach().cpu().numpy()
+        self.cml_logger.report_text(msg=f'Unsyncing val auroc.')
+        self.val_auroc.unsync()
 
-        fig = self._create_auroc_fig(preds, targets)
-
-        self.cml_logger.report_plotly(title='roc_plots',
-                                      series='val',
-                                      figure=fig,
-                                      iteration=self.trainer.current_epoch)
         auroc_val = float(self.val_auroc.compute())
-        self.cml_logger.report_scalar(title='auroc_avg',
-                                      series='val',
-                                      value=auroc_val,
-                                      iteration=self.trainer.current_epoch)
-        self.log('auroc_avg/val', value=auroc_val, on_epoch=True, on_step=False, logger=False, prog_bar=False)
+
+        if self.trainer.is_global_zero:
+            self.cml_logger.report_text(msg=f'Val samples count: {len(targets)}.')
+
+            fig = self._create_auroc_fig(preds, targets)
+            self.cml_logger.report_plotly(title='roc_plots',
+                                          series='val',
+                                          figure=fig,
+                                          iteration=self.trainer.current_epoch)
+            self.cml_logger.report_scalar(title='auroc_avg',
+                                          series='val',
+                                          value=auroc_val,
+                                          iteration=self.trainer.current_epoch)
+
+        self.log('auroc_avg/val', value=auroc_val, on_epoch=True, on_step=False,
+                 logger=False, prog_bar=False)
+
+    def on_test_epoch_start(self) -> None:
+        gpus = self.trainer.accelerator_connector.gpus
+        assert gpus == 1 or gpus is None
 
     def test_step(self, batch, batch_idx):
         x, y_true = batch
@@ -119,7 +135,7 @@ class EfficientNetV2Module(pl.LightningModule):
 
         loss = self.criterion(y_pred, y_true)
 
-        self.log('loss/test', loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log('loss/test', loss, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
         self.test_auroc(self.last_activation(y_pred), y_true.to(dtype=torch.int))
 
         return loss
@@ -130,8 +146,9 @@ class EfficientNetV2Module(pl.LightningModule):
 
         self._write_and_upload_epoch_output_h5(preds, targets)
 
-        fig = self._create_auroc_fig(preds, targets)
+        self.cml_logger.report_text(msg=f'Test samples count: {len(targets)}.')
 
+        fig = self._create_auroc_fig(preds, targets)
         self.cml_logger.report_plotly(title='roc_plots',
                                       series='test',
                                       figure=fig,

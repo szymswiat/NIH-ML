@@ -12,6 +12,7 @@ from models.efficient_net_v2_module import EfficientNetV2Module
 from utils.arg_launcher import ArgLauncher
 
 
+# TODO: add clearml support
 def test(cfg: DictConfig):
     pl.seed_everything(42)
 

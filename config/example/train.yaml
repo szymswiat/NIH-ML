@@ -48,8 +48,6 @@ training:
   log_dir: lightning_logs
   version: training
 
-  test_after_training: true
-
   restore_from_ckpt:
 
   early_stopping:
@@ -62,7 +60,7 @@ training:
 # Hyperparameters
 #
 hparams:
-  epochs: 30
+  epochs: 20
 
   # eff_net_v2
   architecture: eff_net_v2

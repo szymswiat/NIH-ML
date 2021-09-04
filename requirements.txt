@@ -9,6 +9,6 @@ torch==1.9.0
 torchvision==0.8.2
 test-tube==0.7.5
 timm==0.4.12
-torchmetrics==0.4.1
+torchmetrics==0.5.1
 psutil-5.8.0
 neptune-client-0.10.4
