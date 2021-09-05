@@ -2,12 +2,14 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
+import clearml
 import pytorch_lightning as pl
 from omegaconf import OmegaConf, DictConfig
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from data.nih_data_module import NIHDataModule
+from loggers.clearml_logger import ClearMLLogger
 from models.efficient_net_v2_module import EfficientNetV2Module
 from utils.arg_launcher import ArgLauncher
 
@@ -15,6 +17,12 @@ from utils.arg_launcher import ArgLauncher
 # TODO: add clearml support
 def test(cfg: DictConfig):
     pl.seed_everything(42)
+
+    task = clearml.Task.init(project_name='Nih-classification',
+                             task_name=cfg.testing.job_name,
+                             auto_connect_frameworks=False,
+                             output_uri=True,
+                             continue_last_task=True)
 
     #
     # Extract and setup configuration from config file
@@ -53,9 +61,7 @@ def test(cfg: DictConfig):
         raise ValueError()
 
     trainer = Trainer(
-        logger=[TensorBoardLogger(save_dir=exp_root_dir,
-                                  name=exp_str,
-                                  version=log_ver)],
+        logger=ClearMLLogger(task, log_hyperparams=False),
         gpus=1,
         deterministic=True,
         default_root_dir=log_dir,
@@ -63,6 +69,8 @@ def test(cfg: DictConfig):
     )
 
     trainer.test(model, datamodule=dm)
+
+    task.flush()
 
 
 class NIHTestingLauncher(ArgLauncher):

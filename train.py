@@ -3,6 +3,7 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
+import clearml
 import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -14,8 +15,7 @@ from data.nih_data_module import NIHDataModule
 from loggers.clearml_logger import ClearMLLogger
 from models.efficient_net_v2_module import EfficientNetV2Module
 from utils.arg_launcher import ArgLauncher
-from utils.gpu_stats_monitor_ex import GPUStatsMonitorEx
-import clearml
+from utils.misc import to_omega_conf
 
 logger = logging.getLogger(__name__)
 
@@ -23,29 +23,25 @@ logger = logging.getLogger(__name__)
 def train(cfg: DictConfig, is_hpc_exp=False):
     pl.seed_everything(42)
 
+    clearml.Task.force_requirements_env_freeze(requirements_file='requirements.txt')
     task = clearml.Task.init(project_name='Nih-classification',
                              task_name=cfg.cluster.job_name,
                              auto_connect_frameworks=False,
-                             output_uri=True)
+                             output_uri=True,
+                             )
+    cfg.cluster = to_omega_conf(task.connect_configuration(OmegaConf.to_object(cfg.cluster), name='cluster_cfg'))
+    cfg.hparams = to_omega_conf(task.connect_configuration(OmegaConf.to_object(cfg.hparams), name='hparams'))
+    cfg.data = to_omega_conf(task.connect_configuration(OmegaConf.to_object(cfg.data), name='data_cfg'))
+    cfg.training = to_omega_conf(task.connect_configuration(OmegaConf.to_object(cfg.training), name='training_cfg'))
 
-    #
-    # Extract and setup configuration from config file
-    #
-    log_ver = cfg.training.version
-    rfc = cfg.training.restore_from_ckpt
-    exp_root_dir = Path(cfg.training.log_dir) / cfg.cluster.job_name
+    task.execute_remotely(exit_process=True)
 
-    version = f'version_{log_ver}' if isinstance(log_ver, int) else log_ver
-    if rfc and is_hpc_exp:
-        exp_str = Path(rfc).parts[0]
-    elif is_hpc_exp:
-        exp_str = f"exp_{cfg.cluster.hpc_exp_number}"
-    else:
-        exp_str = 'no_exp'
+    log_root_dir = Path(cfg.cluster.log_dir) / task.task_id
+    checkpoint_dir = log_root_dir / 'checkpoints'
+    log_dir = log_root_dir / 'training_logs'
 
-    log_dir = exp_root_dir / exp_str / version
-    checkpoint_dir = log_dir / 'checkpoints'
-    checkpoint_file = exp_root_dir / rfc if rfc else None
+    checkpoint_dir.mkdir(exist_ok=True, parents=True)
+    log_dir.mkdir(exist_ok=True, parents=True)
 
     es_cfg = cfg.training.early_stopping
 
@@ -130,7 +126,7 @@ def train(cfg: DictConfig, is_hpc_exp=False):
 
     trainer_params_cluster = dict(
         gpus=cfg.cluster.gpus_per_node,
-        num_nodes=cfg.cluster.nodes_per_exp,
+        num_nodes=cfg.cluster.nodes,
         accelerator='ddp',
         deterministic=True,
         progress_bar_refresh_rate=0 if is_hpc_exp else None,
@@ -138,12 +134,12 @@ def train(cfg: DictConfig, is_hpc_exp=False):
     )
     trainer_params_common = dict(
         max_epochs=cfg.hparams.epochs,
-        logger=ClearMLLogger(task),
+        logger=ClearMLLogger(task, log_hyperparams=False),
         num_sanity_val_steps=0,
         callbacks=callbacks,
         weights_save_path=checkpoint_dir,
         default_root_dir=log_dir,
-        resume_from_checkpoint=checkpoint_file,
+        # resume_from_checkpoint=checkpoint_file,
         reload_dataloaders_every_n_epochs=1,
         log_every_n_steps=25,
         limit_val_batches=0 if cfg.data.merge_train_val else 1.0
@@ -154,6 +150,9 @@ def train(cfg: DictConfig, is_hpc_exp=False):
     )
 
     trainer.fit(model, datamodule=dm)
+
+    if trainer.is_global_zero is False:
+        return
 
     if cfg.hparams.architecture == 'eff_net_v2':
         best_model_name = Path(max_auc_ckpt_cb.best_model_path)

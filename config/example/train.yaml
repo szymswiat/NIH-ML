@@ -2,18 +2,15 @@
 # Cluster params
 #
 cluster:
-  # Slurm partition.
-  # plgrid-gpu | plgrid-gpu-v100
-  partition: plgrid-gpu-v100
-  #
-  # Count of GPU units per node.
-  gpus_per_node: 4
   #
   # Count of nodes assigned to task.
-  nodes_per_exp: 1
+  nodes: 1
   #
   # Count of CPU cores per node.
   cpus_per_node: 6
+  #
+  # Count of GPU units per node.
+  gpus_per_node: 4
   #
   # Memory per node [GB].
   mem_per_node: 24
@@ -23,6 +20,17 @@ cluster:
   #
   # Walltime of slurm job.
   time: 00-08:00:00
+  #
+  # Slurm log dir.
+  log_dir: /net/archive/groups/plggxrays/dev/cml_agent_data
+
+  cluster_specific:
+    # Slurm partition.
+    # plgrid-gpu | plgrid-gpu-v100
+    partition: plgrid-gpu-v100
+    #
+    # Enable local filesystem.
+    constraint: localfs
 
 
 #
@@ -30,7 +38,6 @@ cluster:
 #
 data:
   dataset_path: /net/archive/groups/plggxrays/NihDataset
-  # dataset_path: /media/DATA_SSD/datasets/nih_dataset
 
   # TODO missing in hparams
   # custom | orig
@@ -43,10 +50,6 @@ data:
 # Training options
 #
 training:
-
-  # will be concatenated with cluster.job_name
-  log_dir: lightning_logs
-  version: training
 
   restore_from_ckpt:
 

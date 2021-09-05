@@ -9,11 +9,13 @@ class ClearMLLogger(LightningLoggerBase):
 
     def __init__(
             self,
-            task: Task
+            task: Task,
+            log_hyperparams: bool = True
     ):
         super().__init__()
 
         self.task = task
+        self._log_hyperparams = log_hyperparams
 
     @property
     def experiment(self) -> Logger:
@@ -36,8 +38,8 @@ class ClearMLLogger(LightningLoggerBase):
                                           iteration=step)
 
     def log_hyperparams(self, params: Union[Dict[str, Any]], *args, **kwargs):
-        params = self._convert_params(params)
+        if self._log_hyperparams:
+            params = self._convert_params(params)
+            params = OmegaConf.create(params)
 
-        params = OmegaConf.create(params)
-
-        self.task.set_parameters_as_dict(OmegaConf.to_object(params))
+            self.task.set_parameters_as_dict(OmegaConf.to_object(params))
