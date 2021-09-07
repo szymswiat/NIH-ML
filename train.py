@@ -20,7 +20,7 @@ from utils.misc import to_omega_conf
 logger = logging.getLogger(__name__)
 
 
-def train(cfg: DictConfig, is_hpc_exp=False):
+def train(cfg: DictConfig):
     pl.seed_everything(42)
 
     clearml.Task.force_requirements_env_freeze(requirements_file='requirements.txt')
@@ -129,7 +129,6 @@ def train(cfg: DictConfig, is_hpc_exp=False):
         num_nodes=cfg.cluster.nodes,
         accelerator='ddp',
         deterministic=True,
-        progress_bar_refresh_rate=0 if is_hpc_exp else None,
         prepare_data_per_node=True,
     )
     trainer_params_common = dict(
@@ -182,7 +181,7 @@ class NIHTrainingLauncher(ArgLauncher):
     def run(self, args) -> None:
         config = OmegaConf.load(args.config)
 
-        train(config, is_hpc_exp=False)
+        train(config)
 
 
 if __name__ == '__main__':
