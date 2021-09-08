@@ -100,11 +100,9 @@ class EfficientNetV2Module(pl.LightningModule):
         self.val_auroc(self.last_activation(y_pred), y_true.to(dtype=torch.int))
 
     def validation_epoch_end(self, outputs: List[Any]) -> None:
-        self.cml_logger.report_text(msg=f'Syncing val auroc.')
         self.val_auroc.sync()
         preds = dim_zero_cat(self.val_auroc.preds).detach().cpu().numpy()
         targets = dim_zero_cat(self.val_auroc.target).detach().cpu().numpy()
-        self.cml_logger.report_text(msg=f'Unsyncing val auroc.')
         self.val_auroc.unsync()
 
         auroc_val = float(self.val_auroc.compute())
@@ -141,23 +139,26 @@ class EfficientNetV2Module(pl.LightningModule):
         return loss
 
     def test_epoch_end(self, outputs: List[Any]) -> None:
+        self.test_auroc.sync()
         preds = torch.cat(self.test_auroc.preds, dim=0).detach().cpu().numpy()
         targets = torch.cat(self.test_auroc.target, dim=0).detach().cpu().numpy()
+        self.test_auroc.unsync()
 
-        self._write_and_upload_epoch_output_h5(preds, targets)
+        if self.trainer.is_global_zero:
+            self._write_and_upload_epoch_output_h5(preds, targets)
 
-        self.cml_logger.report_text(msg=f'Test samples count: {len(targets)}.')
+            self.cml_logger.report_text(msg=f'Test samples count: {len(targets)}.')
 
-        fig = self._create_auroc_fig(preds, targets)
-        self.cml_logger.report_plotly(title='roc_plots',
-                                      series='test',
-                                      figure=fig,
-                                      iteration=self.trainer.current_epoch)
+            fig = self._create_auroc_fig(preds, targets)
+            self.cml_logger.report_plotly(title='roc_plots',
+                                          series='test',
+                                          figure=fig,
+                                          iteration=self.trainer.current_epoch)
 
-        self.cml_logger.report_scalar(title='auroc_avg',
-                                      series='test',
-                                      value=float(self.test_auroc.compute()),
-                                      iteration=self.trainer.current_epoch)
+            self.cml_logger.report_scalar(title='auroc_avg',
+                                          series='test',
+                                          value=float(self.test_auroc.compute()),
+                                          iteration=self.trainer.current_epoch)
 
     def configure_optimizers(self):
         opt_params = dict(params=self.parameters(),

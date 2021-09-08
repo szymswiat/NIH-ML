@@ -1,0 +1,71 @@
+#
+# Data options
+#
+data:
+  # Path to dataset
+  dataset_path: /net/archive/groups/plggxrays/NihDataset
+
+  # custom | orig
+  df_prefix: orig
+
+  # Merge train split with validation
+  merge_train_val: false
+
+#
+# Training options
+#
+training:
+
+  restore_training:
+    enabled: false
+    ckpt_name:
+    task_id:
+
+  early_stopping:
+    enabled: false
+    patience: 3
+    min_delta: 0.001
+
+
+#
+# Hyperparameters
+#
+hparams:
+  epochs: 20
+
+  # eff_net_v2
+  architecture: eff_net_v2
+
+  # s | m | l |
+  net_type: s
+  pretrained: true
+
+  drop_path_rate: 0.2
+
+  focal_loss:
+    gamma: 2
+
+  phases:
+    - image_size: 384
+      dropout_rate: 0.4
+      augment_rate: 0.8
+      batch_size: 38
+      epoch_milestone: 0
+
+  # adam | rmsprop | ranger_lars
+  optimizer: ranger_lars
+
+  lr_initial: 0.01
+
+  lr_decay:
+    enabled: false
+    rate: 0.97
+    interval: 2
+
+  lr_exponential:
+    enabled: true
+    gamma: 0.93
+
+  lr_warmup:
+    enabled: true
+    warmup_steps: 100

@@ -1,0 +1,29 @@
+#
+# Count of nodes assigned to task.
+nodes: 1
+#
+# Count of CPU cores per node.
+cpus_per_node: 6
+#
+# Count of GPU units per node.
+gpus_per_node: 4
+#
+# Memory per node [GB].
+mem_per_node: 24
+#
+# Name of slurm job and training subdirectories
+job_name: test
+#
+# Walltime of slurm job.
+time: 00-08:00:00
+#
+# Log dir.
+log_dir: /net/archive/groups/plggxrays/.clearml/tasks
+
+cluster_specific:
+  # Slurm partition.
+  # plgrid-gpu | plgrid-gpu-v100
+  partition: plgrid-gpu-v100
+  #
+  # Enable local filesystem.
+  constraint: localfs

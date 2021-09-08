@@ -1,7 +1,6 @@
 slurm_logs/
 lightning_logs/
 *.ckpt
-config/workspace/**/*.yaml
 
 */snapshots*
 

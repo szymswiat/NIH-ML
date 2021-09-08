@@ -20,21 +20,33 @@ from utils.misc import to_omega_conf
 logger = logging.getLogger(__name__)
 
 
-def train(cfg: DictConfig):
-    pl.seed_everything(42)
+def connect_with_task(cfg: DictConfig) -> clearml.Task:
+    task_args = dict(auto_connect_frameworks=False,
+                     output_uri=True)
+
+    if cfg.training.restore_training.enabled:
+        task_args.update(dict(continue_last_task=cfg.training.restore_training.task_id))
+    else:
+        task_args.update(dict(project_name='Nih-classification',
+                              task_name=cfg.cluster.job_name))
 
     clearml.Task.force_requirements_env_freeze(requirements_file='requirements.txt')
-    task = clearml.Task.init(project_name='Nih-classification',
-                             task_name=cfg.cluster.job_name,
-                             auto_connect_frameworks=False,
-                             output_uri=True,
-                             )
+    task = clearml.Task.init(**task_args)
+
     cfg.cluster = to_omega_conf(task.connect_configuration(OmegaConf.to_object(cfg.cluster), name='cluster_cfg'))
     cfg.hparams = to_omega_conf(task.connect_configuration(OmegaConf.to_object(cfg.hparams), name='hparams'))
     cfg.data = to_omega_conf(task.connect_configuration(OmegaConf.to_object(cfg.data), name='data_cfg'))
     cfg.training = to_omega_conf(task.connect_configuration(OmegaConf.to_object(cfg.training), name='training_cfg'))
 
     task.execute_remotely(exit_process=True)
+
+    return task
+
+
+def train(cfg: DictConfig):
+    pl.seed_everything(42)
+
+    task = connect_with_task(cfg)
 
     log_root_dir = Path(cfg.cluster.log_dir) / task.task_id
     checkpoint_dir = log_root_dir / 'checkpoints'
@@ -48,6 +60,9 @@ def train(cfg: DictConfig):
     lr_decay_cfg = cfg.hparams.lr_decay
     lr_exponential_cfg = cfg.hparams.lr_exponential
     lr_warmup_cfg = cfg.hparams.lr_warmup
+
+    checkpoint_file = (checkpoint_dir / cfg.training.restore_training.ckpt_name
+                       if cfg.training.restore_training.enabled else None)
 
     #
     # Define callbacks
@@ -138,7 +153,7 @@ def train(cfg: DictConfig):
         callbacks=callbacks,
         weights_save_path=checkpoint_dir,
         default_root_dir=log_dir,
-        # resume_from_checkpoint=checkpoint_file,
+        resume_from_checkpoint=checkpoint_file,
         reload_dataloaders_every_n_epochs=1,
         log_every_n_steps=25,
         limit_val_batches=0 if cfg.data.merge_train_val else 1.0
@@ -150,23 +165,14 @@ def train(cfg: DictConfig):
 
     trainer.fit(model, datamodule=dm)
 
-    if trainer.is_global_zero is False:
-        return
-
     if cfg.hparams.architecture == 'eff_net_v2':
         best_model_name = Path(max_auc_ckpt_cb.best_model_path)
         best_model_path = checkpoint_dir / (best_model_name.stem + '.pt')
-        model = EfficientNetV2Module.load_from_checkpoint(checkpoint_dir / best_model_name,
+        model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_dir / best_model_name),
                                                           num_classes=NIHDataModule.NUM_CLASSES,
                                                           class_freq=dm.get_train_class_freq())
         torch.save(model.state_dict(), best_model_path)
         task.update_output_model(str(best_model_path), tags=['auroc_best'])
-
-    trainer_params_cluster['gpus'] = 1
-    trainer = Trainer(
-        **trainer_params_common,
-        **trainer_params_cluster
-    )
 
     trainer.test(model, datamodule=dm)
 
@@ -176,10 +182,13 @@ def train(cfg: DictConfig):
 class NIHTrainingLauncher(ArgLauncher):
 
     def setup_parser(self, parser: ArgumentParser) -> None:
-        parser.add_argument('config', type=str, help='Path to YAML config file.')
+        parser.add_argument('config_dir', type=str, help='Path to directory with YAML config files.')
 
     def run(self, args) -> None:
-        config = OmegaConf.load(args.config)
+        cfg_root = Path(args.config_dir)
+
+        config = OmegaConf.load(cfg_root / 'train_config.yaml')
+        config.cluster = OmegaConf.load(cfg_root / 'cluster.yaml')
 
         train(config)
 
