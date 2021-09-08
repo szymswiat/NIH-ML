@@ -6,57 +6,44 @@ import clearml
 import pytorch_lightning as pl
 from omegaconf import OmegaConf, DictConfig
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
 
 from data.nih_data_module import NIHDataModule
 from loggers.clearml_logger import ClearMLLogger
 from models.efficient_net_v2_module import EfficientNetV2Module
 from utils.arg_launcher import ArgLauncher
+from utils.misc import to_omega_conf
 
 
-# TODO: add clearml support
-def test(cfg: DictConfig):
+def test(test_cfg: DictConfig):
     pl.seed_everything(42)
 
-    task = clearml.Task.init(project_name='Nih-classification',
-                             task_name=cfg.testing.job_name,
-                             auto_connect_frameworks=False,
+    task = clearml.Task.init(auto_connect_frameworks=False,
                              output_uri=True,
-                             continue_last_task=True)
+                             continue_last_task=test_cfg.task_id)
+    hparams = to_omega_conf(task._get_configuration_dict('hparams'))
+    cluster_cfg = to_omega_conf(task._get_configuration_dict('cluster_cfg'))
+    data_cfg = to_omega_conf(task._get_configuration_dict('data_cfg'))
 
-    #
-    # Extract and setup configuration from config file
-    #
-    log_ver = cfg.testing.version
-    rfc = cfg.testing.ckpt_file
-    exp_root_dir = Path(cfg.testing.log_dir) / cfg.testing.job_name
+    log_root_dir = Path(cluster_cfg.log_dir) / task.task_id
+    checkpoint_dir = log_root_dir / 'checkpoints'
+    log_dir = log_root_dir / 'training_logs'
 
-    version = f'version_{log_ver}' if isinstance(log_ver, int) else log_ver
-
-    exp_str = Path(rfc).parts[0]
-
-    log_dir = exp_root_dir / exp_str / version
-    checkpoint_dir = log_dir / 'checkpoints'
-    checkpoint_file = exp_root_dir / rfc if rfc else None
-
-    params = cfg.testing.params
+    checkpoint_file = checkpoint_dir / test_cfg.ckpt_file
 
     dm = NIHDataModule(
-        dataset_path=cfg.data.dataset_path,
+        dataset_path=data_cfg.dataset_path,
         phases=OmegaConf.create([dict(
-            image_size=params.image_size,
+            image_size=test_cfg.params.image_size,
             augment_rate=0,
-            batch_size=params.batch_size,
+            batch_size=test_cfg.params.batch_size,
             epoch_milestone=0
         )]),
-        df_prefix=cfg.data.df_prefix
+        df_prefix=data_cfg.df_prefix
     )
 
-    arch = cfg.testing.architecture
-
     model_kwargs = dict(class_freq=dm.get_train_class_freq(), num_classes=NIHDataModule.NUM_CLASSES)
-    if arch == 'eff_net_v2':
-        model = EfficientNetV2Module.load_from_checkpoint(checkpoint_file, **model_kwargs)
+    if hparams.architecture == 'eff_net_v2':
+        model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_file), **model_kwargs)
     else:
         raise ValueError()
 
@@ -64,8 +51,8 @@ def test(cfg: DictConfig):
         logger=ClearMLLogger(task, log_hyperparams=False),
         gpus=1,
         deterministic=True,
-        default_root_dir=log_dir,
-        weights_save_path=checkpoint_dir
+        default_root_dir=str(log_root_dir),
+        weights_save_path=str(checkpoint_dir)
     )
 
     trainer.test(model, datamodule=dm)
