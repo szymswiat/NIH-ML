@@ -123,10 +123,6 @@ class EfficientNetV2Module(pl.LightningModule):
         self.log('auroc_avg/val', value=auroc_val, on_epoch=True, on_step=False,
                  logger=False, prog_bar=False)
 
-    def on_test_epoch_start(self) -> None:
-        gpus = self.trainer.accelerator_connector.gpus
-        assert gpus == 1 or gpus is None
-
     def test_step(self, batch, batch_idx):
         x, y_true = batch
         y_pred = self.model(x)
@@ -140,8 +136,8 @@ class EfficientNetV2Module(pl.LightningModule):
 
     def test_epoch_end(self, outputs: List[Any]) -> None:
         self.test_auroc.sync()
-        preds = torch.cat(self.test_auroc.preds, dim=0).detach().cpu().numpy()
-        targets = torch.cat(self.test_auroc.target, dim=0).detach().cpu().numpy()
+        preds = dim_zero_cat(self.test_auroc.preds).detach().cpu().numpy()
+        targets = dim_zero_cat(self.test_auroc.target).detach().cpu().numpy()
         self.test_auroc.unsync()
 
         if self.trainer.is_global_zero:
