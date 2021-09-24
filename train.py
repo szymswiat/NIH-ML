@@ -171,6 +171,9 @@ def train(cfg: DictConfig):
         model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_dir / best_model_name),
                                                           num_classes=NIHDataModule.NUM_CLASSES,
                                                           class_freq=dm.get_train_class_freq())
+    else:
+        raise ValueError()
+    if trainer.is_global_zero:
         torch.save(model.state_dict(), best_model_path)
         task.update_output_model(str(best_model_path), tags=['auroc_best'])
 

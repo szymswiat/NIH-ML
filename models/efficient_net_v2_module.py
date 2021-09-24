@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 import torch
 from clearml import Logger, Task
 from omegaconf import DictConfig
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, roc_auc_score
 from timm.models.efficientnet import tf_efficientnetv2_s, tf_efficientnetv2_m, tf_efficientnetv2_l
 from torch import nn
 from torchmetrics import AUROC
@@ -105,7 +105,7 @@ class EfficientNetV2Module(pl.LightningModule):
         targets = dim_zero_cat(self.val_auroc.target).detach().cpu().numpy()
         self.val_auroc.unsync()
 
-        auroc_val = float(self.val_auroc.compute())
+        auroc_val = roc_auc_score(targets, preds)
 
         if self.trainer.is_global_zero:
             self.cml_logger.report_text(msg=f'Val samples count: {len(targets)}.')
@@ -143,9 +143,10 @@ class EfficientNetV2Module(pl.LightningModule):
         if self.trainer.is_global_zero:
             self._write_and_upload_epoch_output_h5(preds, targets)
 
-            self.cml_logger.report_text(msg=f'Test samples count: {len(targets)}.')
+            self.cml_logger.report_text(msg=f'\nTest samples count: {len(targets)}.')
 
             fig = self._create_auroc_fig(preds, targets)
+
             self.cml_logger.report_plotly(title='roc_plots',
                                           series='test',
                                           figure=fig,
@@ -153,8 +154,9 @@ class EfficientNetV2Module(pl.LightningModule):
 
             self.cml_logger.report_scalar(title='auroc_avg',
                                           series='test',
-                                          value=float(self.test_auroc.compute()),
+                                          value=roc_auc_score(targets, preds),
                                           iteration=self.trainer.current_epoch)
+            self.cml_logger.flush()
 
     def configure_optimizers(self):
         opt_params = dict(params=self.parameters(),
