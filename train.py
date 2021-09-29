@@ -17,6 +17,7 @@ from models.efficient_net_v2_module import EfficientNetV2Module
 from utils.arg_launcher import ArgLauncher
 from utils.misc import to_omega_conf
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -126,14 +127,14 @@ def train(cfg: DictConfig):
     #
     dm = NIHDataModule(
         dataset_path=cfg.data.dataset_path,
-        df_prefix=cfg.data.df_prefix,
         phases=cfg.hparams.phases,
         num_workers=cfg.cluster.cpus_per_node,
-        merge_train_val=cfg.data.merge_train_val
+        merge_train_val=cfg.data.merge_train_val,
+        classes=cfg.data.classes
     )
 
     if cfg.hparams.architecture == 'eff_net_v2':
-        model = EfficientNetV2Module(num_classes=NIHDataModule.NUM_CLASSES,
+        model = EfficientNetV2Module(classes=dm.classes,
                                      class_freq=dm.get_train_class_freq(),
                                      hparams=cfg.hparams)
     else:
@@ -169,7 +170,7 @@ def train(cfg: DictConfig):
         best_model_name = Path(max_auc_ckpt_cb.best_model_path)
         best_model_path = checkpoint_dir / (best_model_name.stem + '.pt')
         model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_dir / best_model_name),
-                                                          num_classes=NIHDataModule.NUM_CLASSES,
+                                                          num_classes=len(dm.classes),
                                                           class_freq=dm.get_train_class_freq())
     else:
         raise ValueError()

@@ -27,35 +27,40 @@ class EfficientNetV2Module(pl.LightningModule):
 
     def __init__(
             self,
-            num_classes: int,
+            classes: List[str],
             class_freq: Tuple[List[float], int],
-            hparams: DictConfig
+            hparams: DictConfig,
+            predict=False
     ):
         super().__init__()
         self.save_hyperparameters(hparams)
 
         assert self.hparams.net_type in self._VARIANTS
 
-        self._num_classes = num_classes
+        self._classes = classes
+        self._num_classes = len(classes)
 
         self.model = self._VARIANTS[self.hparams.net_type](drop_path_rate=self.hparams.drop_path_rate,
                                                            num_classes=self._num_classes,
                                                            pretrained=self.hparams.pretrained)
-        class_weights = self._compute_class_weights(*class_freq)
 
         self.last_activation = nn.Sigmoid()
-        # self.criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights)
-        self.criterion = FocalLoss(class_weights=class_weights,
-                                   gamma=self.hparams.focal_loss.gamma,
-                                   reduction='mean')
 
-        self.val_auroc = AUROC(num_classes=num_classes, compute_on_step=False)
-        self.test_auroc = AUROC(num_classes=num_classes, compute_on_step=False)
+        if not predict:
+            class_weights = self._compute_class_weights(*class_freq)
 
-        # update batch norm momentum to 0.99 (1 - 0.99 = 0.01)
-        for name, child in self.named_children():
-            if isinstance(child, torch.nn.BatchNorm2d):
-                child.momentum = 0.01
+            # self.criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights)
+            self.criterion = FocalLoss(class_weights=class_weights,
+                                       gamma=self.hparams.focal_loss.gamma,
+                                       reduction='mean')
+
+            self.val_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
+            self.test_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
+
+            # update batch norm momentum to 0.99 (1 - 0.99 = 0.01)
+            for name, child in self.named_children():
+                if isinstance(child, torch.nn.BatchNorm2d):
+                    child.momentum = 0.01
 
     @property
     def cml_logger(self) -> Logger:
@@ -189,8 +194,7 @@ class EfficientNetV2Module(pl.LightningModule):
         self.cml_task.upload_artifact(name='test_prediction_output',
                                       artifact_object=log_dir / 'test_output.h5')
 
-    @staticmethod
-    def _create_auroc_fig(preds: np.ndarray, targets: np.ndarray) -> go.Figure:
+    def _create_auroc_fig(self, preds: np.ndarray, targets: np.ndarray) -> go.Figure:
         fig = go.Figure()
 
         fig.add_shape(type='line', line=dict(dash='dash'),
@@ -201,9 +205,9 @@ class EfficientNetV2Module(pl.LightningModule):
         for i in range(targets.shape[1]):
             roc_output.append(roc_curve(targets[..., i], preds[..., i]))
 
-        for i, ((fpr, tpr, thresholds), cls) in enumerate(zip(roc_output, range(len(roc_output)))):
-            # cls = cls.replace('_', ' ')
-            thresholds = [f'threshold: {th:.5f}' for th in thresholds]
+        for i, ((fpr, tpr, thresholds), cls) in enumerate(zip(roc_output, self._classes)):
+            cls = cls.replace('_', ' ')
+            thresholds = [f'threshold: {th:.3f}' for th in thresholds]
             fig.add_trace(
                 go.Scatter(x=fpr, y=tpr, text=thresholds,
                            name=f'{cls:20} AUC: {auc(fpr, tpr):.3f}', mode='lines'))
@@ -226,7 +230,8 @@ class EfficientNetV2Module(pl.LightningModule):
 
         return fig
 
-    def _compute_class_weights(self, samples_per_class: List[float], samples_count: int) -> torch.Tensor:
+    @staticmethod
+    def _compute_class_weights(samples_per_class: List[float], samples_count: int) -> torch.Tensor:
         class_freq = torch.tensor(samples_per_class, dtype=torch.float)
 
         class_weights = samples_count / (len(class_freq) * class_freq)

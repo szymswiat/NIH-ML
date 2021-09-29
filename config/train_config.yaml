@@ -11,6 +11,15 @@ data:
   # Merge train split with validation
   merge_train_val: false
 
+  # Specify classes, leave empty to use all
+  classes:
+    - Cardiomegaly
+    - Edema
+    - Effusion
+    - Emphysema
+    - Mass
+    - Pneumothorax
+
 #
 # Training options
 #

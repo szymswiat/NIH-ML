@@ -1,34 +1,36 @@
-import json
 import os
 import shutil
 import zipfile
 from pathlib import Path
 from time import time
-from typing import List, Dict, Tuple
+from typing import List, Tuple, Any
 
 import albumentations as A
 import numpy as np
-import pandas as pd
 import pytorch_lightning as pl
+import torch
+import logging
 from albumentations.pytorch import ToTensorV2
 from omegaconf import ListConfig, DictConfig
 from torch.utils.data import DataLoader
+from torchvision import transforms
 
 from data.nih_dataset import NIHDataset
-from data.nih_df_generator import NIHDfGenerator
+import transforms as tfm
+
+logger = logging.getLogger(__name__)
 
 
 class NIHDataModule(pl.LightningDataModule):
-    NUM_CLASSES = 14
 
     def __init__(
             self,
             dataset_path: str,
-            df_prefix='orig',
             phases: ListConfig = None,
-            num_workers=2,
-            copy_to_scratch=False,
-            merge_train_val=False
+            num_workers: int = 2,
+            copy_to_scratch: bool = False,
+            merge_train_val: bool = False,
+            classes: List[str] = None
     ):
         super().__init__()
         self._dataset_path = Path(dataset_path)
@@ -37,13 +39,17 @@ class NIHDataModule(pl.LightningDataModule):
         self._copy_to_scratch = copy_to_scratch
         self._merge_train_val = merge_train_val
 
-        df_files_root = self._dataset_path / 'df_split_files'
-        self._train_df = pd.read_csv(str(df_files_root / f'{df_prefix}_train_df.csv'))
-        self._val_df = pd.read_csv(str(df_files_root / f'{df_prefix}_val_df.csv'))
-        self._test_df = pd.read_csv(str(df_files_root / f'{df_prefix}_test_df.csv'))
+        logger.info('Parsing dataset files ...')
+        self._metadata = NIHDataset.parse_dataset_meta(
+            dataset_path=self._dataset_path,
+            validation_df_size=0.0 if merge_train_val else 0.05,
+            classes=classes
+        )
+        logger.info('Dataset files parsed!')
 
-        if self._merge_train_val:
-            self._train_df = self._train_df.append(self._val_df)
+    @property
+    def classes(self) -> List[str]:
+        return self._metadata['classes']
 
     @property
     def _current_phase(self) -> DictConfig:
@@ -92,7 +98,9 @@ class NIHDataModule(pl.LightningDataModule):
             A.Rotate(limit=45, p=p),
             A.HorizontalFlip(p=p),
             A.VerticalFlip(p=p),
-            A.Normalize(mean=[0.5055] * 3, std=[0.1712] * 3),
+            tfm.NormalizeAlb(NIHDataset.MIN_MAX_VALUE,
+                             mean=[NIHDataset.MEAN] * 3,
+                             std=[NIHDataset.STD] * 3),
             ToTensorV2()
         ])
 
@@ -101,45 +109,79 @@ class NIHDataModule(pl.LightningDataModule):
         size = self._current_phase.image_size
         return A.Compose([
             A.Resize(size, size),
-            A.Normalize(mean=[0.5055] * 3, std=[0.1712] * 3),
+            tfm.NormalizeAlb(NIHDataset.MIN_MAX_VALUE,
+                             mean=[NIHDataset.MEAN] * 3,
+                             std=[NIHDataset.STD] * 3),
             ToTensorV2()
         ])
 
     def train_dataloader(self) -> DataLoader:
         train_set = NIHDataset(
             dataset_path=self._dataset_path,
-            df=self._train_df,
-            transforms=self._transforms_train,
+            input_df=self._metadata['train_df'],
+            transforms=self._transforms_train
         )
         return DataLoader(train_set, batch_size=self._current_phase.batch_size,
-                          shuffle=True, num_workers=self._num_workers)
+                          shuffle=True, num_workers=self._num_workers,
+                          collate_fn=train_set.collate_fn())
 
     def val_dataloader(self) -> DataLoader:
         assert self._merge_train_val is False
 
         val_set = NIHDataset(
             dataset_path=self._dataset_path,
-            df=self._val_df,
-            transforms=self._transforms_val,
+            input_df=self._metadata['val_df'],
+            transforms=self._transforms_val
         )
         return DataLoader(val_set, batch_size=self._current_phase.batch_size,
-                          shuffle=False, num_workers=self._num_workers)
+                          shuffle=False, num_workers=self._num_workers,
+                          collate_fn=val_set.collate_fn())
 
     def test_dataloader(self) -> DataLoader:
         test_set = NIHDataset(
             dataset_path=self._dataset_path,
-            df=self._test_df,
-            transforms=self._transforms_val,
+            input_df=self._metadata['test_df'],
+            transforms=self._transforms_val
         )
         return DataLoader(test_set, batch_size=self._current_phase.batch_size,
-                          shuffle=False, num_workers=self._num_workers)
+                          shuffle=False, num_workers=self._num_workers,
+                          collate_fn=test_set.collate_fn())
 
     def get_train_class_freq(self) -> Tuple[List[float], int]:
-        column = self._train_df["Label"].tolist()
-        labels = list(map(lambda row: json.loads(row), column))
+        labels = self._metadata['test_df']["Label"].tolist()
         labels = np.array(labels, dtype=float)
 
         samples_count = len(labels)
         samples_per_class = np.sum(labels, axis=0)
 
         return list(map(lambda x: float(x), samples_per_class)), samples_count
+
+
+class NIHInferenceModuleWrapper(pl.LightningModule):
+
+    def __init__(
+            self,
+            model: pl.LightningModule,
+            img_size: Tuple[int, int],
+            min_max_value: Tuple[int, int]
+    ):
+        super().__init__()
+
+        self.model = model
+        self.model.eval()
+
+        self._min_max_value = min_max_value
+        self._range_value = abs(min_max_value[0]) + abs(min_max_value[1])
+
+        self._pre_transforms = transforms.Compose([
+            transforms.Resize(size=img_size),
+            transforms.Lambda(self.scale_values),
+            tfm.NormalizeTorch(NIHDataset.MIN_MAX_VALUE,
+                               mean=[NIHDataset.MEAN] * 3,
+                               std=[NIHDataset.STD] * 3)
+        ])
+
+    def forward(self, x) -> Any:
+        x2 = torch.stack([self._pre_transforms(img) for img in x])
+
+        return self.model(x2)
