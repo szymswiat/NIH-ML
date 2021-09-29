@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import List, Any, Tuple
 
-import h5py
 import numpy as np
 import plotly.graph_objects as go
 import pytorch_lightning as pl
@@ -16,6 +15,7 @@ from torchmetrics.utilities.data import dim_zero_cat
 
 from losses.focal_loss import FocalLoss
 from optimizers.over9000 import RangerLars
+from utils.pred_zarr_io import PredZarrWriter
 
 
 class EfficientNetV2Module(pl.LightningModule):
@@ -186,10 +186,8 @@ class EfficientNetV2Module(pl.LightningModule):
         log_dir = Path(self.trainer._default_root_dir)
         log_dir.mkdir(exist_ok=True, parents=True)
 
-        h5_file = h5py.File(str(log_dir / 'test_output.h5'), 'w')
-        h5_file.create_dataset('preds', data=preds)
-        h5_file.create_dataset('targets', data=targets)
-        h5_file.close()
+        with PredZarrWriter(log_dir / 'test_output.h5') as pzw:
+            pzw.write_pred_output(preds, targets)
 
         self.cml_task.upload_artifact(name='test_prediction_output',
                                       artifact_object=log_dir / 'test_output.h5')

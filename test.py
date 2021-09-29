@@ -14,6 +14,7 @@ from utils.arg_launcher import ArgLauncher
 from utils.misc import to_omega_conf
 
 
+# TODO:
 def test(test_cfg: DictConfig):
     pl.seed_everything(42)
 

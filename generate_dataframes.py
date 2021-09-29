@@ -3,7 +3,6 @@ import warnings
 from argparse import ArgumentParser
 from pathlib import Path
 
-import yaml
 from omegaconf import OmegaConf
 
 from data.nih_dataset import NIHDataset
