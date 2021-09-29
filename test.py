@@ -14,16 +14,20 @@ from utils.arg_launcher import ArgLauncher
 from utils.misc import to_omega_conf
 
 
-# TODO:
 def test(test_cfg: DictConfig):
     pl.seed_everything(42)
 
-    task = clearml.Task.init(auto_connect_frameworks=False,
-                             output_uri=True,
-                             continue_last_task=test_cfg.task_id)
-    hparams = to_omega_conf(task._get_configuration_dict('hparams'))
-    cluster_cfg = to_omega_conf(task._get_configuration_dict('cluster_cfg'))
-    data_cfg = to_omega_conf(task._get_configuration_dict('data_cfg'))
+    train_task = clearml.Task.get_task(task_id=test_cfg.task_id)
+
+    task = clearml.Task.init(project_name=train_task.project,
+                             task_name=f'{train_task.name}_test',
+                             auto_connect_frameworks=False,
+                             output_uri=True)
+    task.execute_remotely(exit_process=True)
+
+    hparams = to_omega_conf(train_task._get_configuration_dict('hparams'))
+    cluster_cfg = to_omega_conf(train_task._get_configuration_dict('cluster_cfg'))
+    data_cfg = to_omega_conf(train_task._get_configuration_dict('data_cfg'))
 
     log_root_dir = Path(cluster_cfg.log_dir) / task.task_id
     checkpoint_dir = log_root_dir / 'checkpoints'
@@ -39,12 +43,13 @@ def test(test_cfg: DictConfig):
             batch_size=test_cfg.params.batch_size,
             epoch_milestone=0
         )]),
-        df_prefix=data_cfg.df_prefix
+        classes=test_cfg.classes
     )
 
-    model_kwargs = dict(class_freq=dm.get_train_class_freq(), num_classes=NIHDataModule.NUM_CLASSES)
     if hparams.architecture == 'eff_net_v2':
-        model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_file), **model_kwargs)
+        model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_file),
+                                                          class_freq=dm.get_train_class_freq(),
+                                                          classes=dm.classes)
     else:
         raise ValueError()
 

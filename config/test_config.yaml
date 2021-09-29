@@ -8,6 +8,15 @@ task_id:
 # Checkpoint filename.
 ckpt_file:
 
+# Specify classes, leave empty to use all
+classes:
+  - Cardiomegaly
+  - Edema
+  - Effusion
+  - Emphysema
+  - Mass
+  - Pneumothorax
+
 
 params:
   batch_size: 4

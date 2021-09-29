@@ -170,7 +170,7 @@ def train(cfg: DictConfig):
         best_model_name = Path(max_auc_ckpt_cb.best_model_path)
         best_model_path = checkpoint_dir / (best_model_name.stem + '.pt')
         model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_dir / best_model_name),
-                                                          num_classes=len(dm.classes),
+                                                          classes=dm.classes,
                                                           class_freq=dm.get_train_class_freq())
     else:
         raise ValueError()
