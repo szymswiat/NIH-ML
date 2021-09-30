@@ -8,8 +8,8 @@ data:
   # custom | orig
   df_prefix: orig
 
-  # Merge train split with validation
-  merge_train_val: false
+  # Split type, defined in NIHDataset
+  split_type: official_val_from_test
 
   # Specify classes, leave empty to use all
   classes:
@@ -40,7 +40,7 @@ training:
 # Hyperparameters
 #
 hparams:
-  epochs: 20
+  epochs: 30
 
   # eff_net_v2
   architecture: eff_net_v2

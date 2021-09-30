@@ -5,7 +5,6 @@ from pathlib import Path
 
 import clearml
 import pytorch_lightning as pl
-import torch
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
@@ -16,6 +15,7 @@ from loggers.clearml_logger import ClearMLLogger
 from models.efficient_net_v2_module import EfficientNetV2Module
 from utils.arg_launcher import ArgLauncher
 from utils.misc import to_omega_conf
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ def train(cfg: DictConfig):
 
     task = connect_with_task(cfg)
 
-    log_root_dir = Path(cfg.cluster.log_dir) / task.task_id
+    log_root_dir = Path(task.session.config.get('sdk.storage.log_dir')) / task.task_id
     checkpoint_dir = log_root_dir / 'checkpoints'
     log_dir = log_root_dir / 'training_logs'
 
@@ -127,9 +127,9 @@ def train(cfg: DictConfig):
     #
     dm = NIHDataModule(
         dataset_path=cfg.data.dataset_path,
+        split_type=cfg.data.split_type,
         phases=cfg.hparams.phases,
         num_workers=cfg.cluster.cpus_per_node,
-        merge_train_val=cfg.data.merge_train_val,
         classes=cfg.data.classes
     )
 
@@ -156,8 +156,7 @@ def train(cfg: DictConfig):
         default_root_dir=log_dir,
         resume_from_checkpoint=checkpoint_file,
         reload_dataloaders_every_n_epochs=1,
-        log_every_n_steps=25,
-        limit_val_batches=0 if cfg.data.merge_train_val else 1.0
+        log_every_n_steps=25
     )
     trainer = Trainer(
         **trainer_params_common,
@@ -165,6 +164,9 @@ def train(cfg: DictConfig):
     )
 
     trainer.fit(model, datamodule=dm)
+
+    # wait for checkpoint to be saved
+    time.sleep(5)
 
     if cfg.hparams.architecture == 'eff_net_v2':
         best_model_name = Path(max_auc_ckpt_cb.best_model_path)

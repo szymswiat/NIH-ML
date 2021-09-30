@@ -104,6 +104,8 @@ class EfficientNetV2Module(pl.LightningModule):
         targets = dim_zero_cat(self.val_auroc.target).detach().cpu().numpy()
         self.val_auroc.unsync()
 
+        self.val_auroc.reset()
+
         auroc_val = roc_auc_score(targets, preds)
 
         if self.trainer.is_global_zero:
@@ -180,11 +182,11 @@ class EfficientNetV2Module(pl.LightningModule):
         log_dir = Path(self.trainer._default_root_dir)
         log_dir.mkdir(exist_ok=True, parents=True)
 
-        with PredZarrWriter(log_dir / 'test_output.h5') as pzw:
-            pzw.write_pred_output(preds, targets)
+        with PredZarrWriter(log_dir / 'test_output.zarr') as pzw:
+            pzw.write_pred_output(preds, targets, self._classes)
 
         self.cml_task.upload_artifact(name='test_prediction_output',
-                                      artifact_object=log_dir / 'test_output.h5')
+                                      artifact_object=log_dir / 'test_output.zarr')
 
     def _create_auroc_fig(self, preds: np.ndarray, targets: np.ndarray) -> go.Figure:
         fig = go.Figure()

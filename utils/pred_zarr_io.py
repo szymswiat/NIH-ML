@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, List
 
 import numpy as np
 import zarr
@@ -23,8 +23,8 @@ class PredZarrReader:
         self._store.close()
         self.root = None
 
-    def read_pred_output(self) -> Tuple[np.ndarray, np.ndarray]:
-        return self.root['preds'][:], self.root['targets'][:]
+    def read_pred_output(self) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        return self.root['preds'][:], self.root['targets'][:], self.root.attrs['classes']
 
 
 class PredZarrWriter:
@@ -48,7 +48,9 @@ class PredZarrWriter:
     def write_pred_output(
             self,
             preds: np.ndarray,
-            targets: np.ndarray
+            targets: np.ndarray,
+            classes: List[str]
     ):
         self.root['preds'] = preds
         self.root['targets'] = targets
+        self.root.attrs['classes'] = classes

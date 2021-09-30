@@ -1,22 +1,18 @@
-import os
-import shutil
-import zipfile
+import logging
 from pathlib import Path
-from time import time
 from typing import List, Tuple, Any
 
 import albumentations as A
 import numpy as np
 import pytorch_lightning as pl
 import torch
-import logging
 from albumentations.pytorch import ToTensorV2
 from omegaconf import ListConfig, DictConfig
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from data.nih_dataset import NIHDataset
 import transforms as tfm
+from data.nih_dataset import NIHDataset
 
 logger = logging.getLogger(__name__)
 
@@ -26,23 +22,20 @@ class NIHDataModule(pl.LightningDataModule):
     def __init__(
             self,
             dataset_path: str,
-            phases: ListConfig = None,
+            split_type: str,
+            phases: ListConfig,
             num_workers: int = 2,
-            copy_to_scratch: bool = False,
-            merge_train_val: bool = False,
             classes: List[str] = None
     ):
         super().__init__()
         self._dataset_path = Path(dataset_path)
         self._phases = phases
         self._num_workers = num_workers
-        self._copy_to_scratch = copy_to_scratch
-        self._merge_train_val = merge_train_val
 
         logger.info('Parsing dataset files ...')
         self._metadata = NIHDataset.parse_dataset_meta(
             dataset_path=self._dataset_path,
-            validation_df_size=0.0 if merge_train_val else 0.05,
+            split_type=split_type,
             classes=classes
         )
         logger.info('Dataset files parsed!')
@@ -57,26 +50,6 @@ class NIHDataModule(pl.LightningDataModule):
         for phase in reversed(self._phases):
             if self.trainer.current_epoch >= phase.epoch_milestone:
                 return phase
-
-    def prepare_data(self):
-        if self._copy_to_scratch:
-            # TODO update NIHDfGenerator.generate_and_save_dfs with custom df support
-            assert False
-            start = time()
-            scratch_dataset_root = Path(os.environ['SCRATCH_LOCAL']) / 'NihDataset'
-            scratch_dataset_root.mkdir()
-            shutil.copy(self._dataset_path, scratch_dataset_root)
-
-            scratch_dataset = scratch_dataset_root / self._dataset_path.name
-
-            print('Extracting data ...')
-            with zipfile.ZipFile(str(scratch_dataset), 'r') as zip_ref:
-                zip_ref.extractall(str(scratch_dataset_root))
-            print(f'Dataset copied and extracted. Time {time() - start}s.')
-            self._dataset_path = scratch_dataset_root
-            print('Generating dataframes ...')
-            NIHDfGenerator.generate_and_save_dfs(self._dataset_path)
-            print('Dataframes generated.')
 
     @property
     def _transforms_train(self) -> A.Compose:
@@ -126,8 +99,6 @@ class NIHDataModule(pl.LightningDataModule):
                           collate_fn=train_set.collate_fn())
 
     def val_dataloader(self) -> DataLoader:
-        assert self._merge_train_val is False
-
         val_set = NIHDataset(
             dataset_path=self._dataset_path,
             input_df=self._metadata['val_df'],

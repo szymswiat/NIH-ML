@@ -27,6 +27,10 @@ class NIHDataset(Dataset):
     STD = 0.2500
     MIN_MAX_VALUE = (0, 255)
 
+    SPLIT_OFFICIAL_WITH_VAL = 'official_with_val'
+    SPLIT_OFFICIAL_VAL_FROM_TEST = 'official_val_from_test'
+    SPLIT_STRATIFIED = 'stratified'
+
     def __init__(
             self,
             dataset_path: Path,
@@ -83,7 +87,7 @@ class NIHDataset(Dataset):
     @staticmethod
     def parse_dataset_meta(
             dataset_path: Path,
-            validation_df_size=0.0,
+            split_type: str = SPLIT_OFFICIAL_WITH_VAL,
             classes: List[str] = None,
             drop_no_findings_class=True
     ) -> Dict:
@@ -148,13 +152,24 @@ class NIHDataset(Dataset):
             'test_df': test_df
         }
 
-        # TODO: don't split dataset randomly
-        if validation_df_size > 0.0:
-            train_df, val_df = NIHDataset.split_df(train_val_df, 1.0 - validation_df_size)
+        if split_type == NIHDataset.SPLIT_OFFICIAL_WITH_VAL:
+            # TODO: don't split dataset randomly
+            train_df, val_df = NIHDataset.split_df(train_val_df, 1.0 - 0.05)
             out_dct.update({
                 'train_df': train_df,
                 'val_df': val_df
             })
+        elif split_type == NIHDataset.SPLIT_OFFICIAL_VAL_FROM_TEST:
+            # TODO: don't split dataset randomly
+            test_df, val_df = NIHDataset.split_df(test_df, 1.0 - 0.25)
+            out_dct.update({
+                'test_df': test_df,
+                'val_df': val_df
+            })
+        elif split_type == NIHDataset.SPLIT_STRATIFIED:
+            raise NotImplementedError()
+        else:
+            raise ValueError(f'Invalid split type : {split_type}.')
 
         logger.info('Dataframes generated!')
 
@@ -172,13 +187,13 @@ class NIHDataset(Dataset):
             dataset_path: Path,
             out_dir: Path,
             name_prefix: str,
-            validation_df_size=0.0,
+            split_type: str,
             drop_no_findings_class=True,
             classes: List[str] = None
     ) -> Dict:
 
         data = NIHDataset.parse_dataset_meta(dataset_path=dataset_path,
-                                             validation_df_size=validation_df_size,
+                                             split_type=split_type,
                                              classes=classes,
                                              drop_no_findings_class=drop_no_findings_class)
 

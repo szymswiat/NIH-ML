@@ -26,9 +26,9 @@ class SplitterLauncher(ArgLauncher):
         parser.add_argument('--prefix',
                             help='Name prefix for generated files.',
                             default='official', type=str)
-        parser.add_argument('--val-size',
-                            help='Validation split size in %.',
-                            default=0.0, type=float)
+        parser.add_argument('--split-type',
+                            help='Split type, possible values defined in NIHDataset.',
+                            default=NIHDataset.SPLIT_OFFICIAL_WITH_VAL, type=str)
         parser.add_argument('-c', '--classes',
                             help='Path to file with classes in yaml format. '
                                  'Allows to select which classes will be included output files.',
@@ -44,7 +44,7 @@ class SplitterLauncher(ArgLauncher):
             dataset_path=Path(args.path),
             out_dir=Path(args.path) / args.out_dir,
             name_prefix=args.prefix,
-            validation_df_size=args.val_size,
+            split_type=args.split_type,
             classes=OmegaConf.load(classes_file) if classes_file else None
         )
 
