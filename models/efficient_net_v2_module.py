@@ -1,12 +1,13 @@
+from __future__ import annotations
 from pathlib import Path
-from typing import List, Any, Tuple
+from typing import List, Any, Tuple, Dict
 
 import numpy as np
 import plotly.graph_objects as go
 import pytorch_lightning as pl
 import torch
 from clearml import Logger, Task
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_curve, auc, roc_auc_score
 from timm.models.efficientnet import tf_efficientnetv2_s, tf_efficientnetv2_m, tf_efficientnetv2_l
 from torch import nn
@@ -25,20 +26,14 @@ class EfficientNetV2Module(pl.LightningModule):
         'l': tf_efficientnetv2_l
     }
 
-    def __init__(
-            self,
-            classes: List[str],
-            class_freq: Tuple[List[float], int],
-            hparams: DictConfig,
-            predict=False
-    ):
+    def __init__(self, hparams: DictConfig):
         super().__init__()
         self.save_hyperparameters(hparams)
 
         assert self.hparams.net_type in self._VARIANTS
 
-        self._classes = classes
-        self._num_classes = len(classes)
+        self._classes = self.hparams.dynamic.classes
+        self._num_classes = len(self._classes)
 
         self.model = self._VARIANTS[self.hparams.net_type](drop_path_rate=self.hparams.drop_path_rate,
                                                            num_classes=self._num_classes,
@@ -46,21 +41,20 @@ class EfficientNetV2Module(pl.LightningModule):
 
         self.last_activation = nn.Sigmoid()
 
-        if not predict:
-            class_weights = self._compute_class_weights(*class_freq)
+        class_weights = self._compute_class_weights(*self.hparams.dynamic.class_freq)
 
-            # self.criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights)
-            self.criterion = FocalLoss(class_weights=class_weights,
-                                       gamma=self.hparams.focal_loss.gamma,
-                                       reduction='mean')
+        # self.criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights)
+        self.criterion = FocalLoss(class_weights=class_weights,
+                                   gamma=self.hparams.focal_loss.gamma,
+                                   reduction='mean')
 
-            self.val_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
-            self.test_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
+        self.val_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
+        self.test_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
 
-            # update batch norm momentum to 0.99 (1 - 0.99 = 0.01)
-            for name, child in self.named_children():
-                if isinstance(child, torch.nn.BatchNorm2d):
-                    child.momentum = 0.01
+        # update batch norm momentum to 0.99 (1 - 0.99 = 0.01)
+        for name, child in self.named_children():
+            if isinstance(child, torch.nn.BatchNorm2d):
+                child.momentum = 0.01
 
     @property
     def cml_logger(self) -> Logger:
@@ -235,3 +229,22 @@ class EfficientNetV2Module(pl.LightningModule):
         class_weights = samples_count / (len(class_freq) * class_freq)
 
         return torch.sqrt(class_weights / torch.max(class_weights))
+
+    @classmethod
+    def load_from_file(cls, path: Path) -> EfficientNetV2Module:
+        state = torch.load(path.as_posix())
+
+        hparams = state['hparams']
+        state_dict = state['state_dict']
+
+        model = cls(OmegaConf.create(hparams))
+        model.load_state_dict(state_dict)
+
+        return model
+
+    def save_to_file(self, path: Path):
+        state = {
+            'hparams': OmegaConf.to_object(self.hparams),
+            'state_dict': self.state_dict()
+        }
+        torch.save(state, path)

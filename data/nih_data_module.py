@@ -163,7 +163,9 @@ class NIHInferenceModuleWrapper(pl.LightningModule):
             self,
             model: pl.LightningModule,
             img_size: Tuple[int, int],
-            min_max_value: Tuple[int, int]
+            min_max_value: Tuple[int, int],
+            mean: float,
+            std: float
     ):
         super().__init__()
 
@@ -175,13 +177,10 @@ class NIHInferenceModuleWrapper(pl.LightningModule):
 
         self._pre_transforms = transforms.Compose([
             transforms.Resize(size=img_size),
-            transforms.Lambda(self.scale_values),
-            tfm.NormalizeTorch(NIHDataset.MIN_MAX_VALUE,
-                               mean=[NIHDataset.MEAN] * 3,
-                               std=[NIHDataset.STD] * 3)
+            tfm.NormalizeTorch(min_max_value, mean=[mean] * 3, std=[std] * 3)
         ])
 
     def forward(self, x) -> Any:
         x2 = torch.stack([self._pre_transforms(img) for img in x])
 
-        return self.model(x2)
+        return self.model(x2.float())

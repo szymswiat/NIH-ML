@@ -71,5 +71,8 @@ class NormalizeTorch(NormalizeBase, torch.nn.Module):
 
     def forward(self, img: torch.Tensor):
         img = self.scale_values(img)
+        img = img.permute(1, 2, 0)
 
-        return self.apply_mean_std(img)
+        img = self.apply_mean_std(img)
+
+        return img.permute(2, 0, 1)

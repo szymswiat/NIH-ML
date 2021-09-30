@@ -47,9 +47,7 @@ def test(test_cfg: DictConfig):
     )
 
     if hparams.architecture == 'eff_net_v2':
-        model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_file),
-                                                          class_freq=dm.get_train_class_freq(),
-                                                          classes=dm.classes)
+        model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_file))
     else:
         raise ValueError()
 

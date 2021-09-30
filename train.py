@@ -134,9 +134,9 @@ def train(cfg: DictConfig):
     )
 
     if cfg.hparams.architecture == 'eff_net_v2':
-        model = EfficientNetV2Module(classes=dm.classes,
-                                     class_freq=dm.get_train_class_freq(),
-                                     hparams=cfg.hparams)
+        cfg.hparams.dynamic.classes = dm.classes
+        cfg.hparams.dynamic.class_freq = dm.get_train_class_freq()
+        model = EfficientNetV2Module(hparams=cfg.hparams)
     else:
         raise ValueError()
 
@@ -169,13 +169,11 @@ def train(cfg: DictConfig):
     if cfg.hparams.architecture == 'eff_net_v2':
         best_model_name = Path(max_auc_ckpt_cb.best_model_path)
         best_model_path = checkpoint_dir / (best_model_name.stem + '.pt')
-        model = EfficientNetV2Module.load_from_checkpoint(str(checkpoint_dir / best_model_name),
-                                                          classes=dm.classes,
-                                                          class_freq=dm.get_train_class_freq())
+        model = EfficientNetV2Module.load_from_checkpoint((checkpoint_dir / best_model_name).as_posix())
     else:
         raise ValueError()
     if trainer.is_global_zero:
-        torch.save(model.state_dict(), best_model_path)
+        model.save_to_file(best_model_path)
         task.update_output_model(str(best_model_path), tags=['auroc_best'])
 
     trainer.test(model, datamodule=dm)

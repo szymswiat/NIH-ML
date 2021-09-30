@@ -78,3 +78,8 @@ hparams:
   lr_warmup:
     enabled: true
     warmup_steps: 100
+
+  # Keys under 'dynamic' should be empty (will be updated in runtime)
+  dynamic:
+    classes:
+    class_freq:
