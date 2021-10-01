@@ -36,7 +36,8 @@ class NIHDataset(Dataset):
             dataset_path: Path,
             input_df: pd.DataFrame,
             transforms=A.Compose([]),
-            mode=CLASSIFICATION_MODE
+            mode=CLASSIFICATION_MODE,
+            filter_by_positive_class: List[str] = None,
     ):
         self._dataset_path = dataset_path
         self._transforms = transforms
@@ -49,7 +50,10 @@ class NIHDataset(Dataset):
             df['Label'] = df['Label'].map(lambda x: json.loads(x))
 
         if mode == self.BBOX_ONLY_MODE:
-            df = df[df['Bboxes'] != {}]
+            df = df[df.apply(lambda x: x['Bboxes'] != [], axis=1)]
+
+        if filter_by_positive_class is not None:
+            df = df[df.apply(lambda row: len(set(row['Label_Str']) & set(filter_by_positive_class)) > 0, axis=1)]
 
         self._df = df
 
@@ -114,13 +118,15 @@ class NIHDataset(Dataset):
                 classes.insert(0, 'No Finding')
 
         encoder = MultiLabelBinarizer(classes=classes)
-        labels_all = encoder.fit_transform([c.split(',') for c in list(data_entry_df['Finding Labels'])])
+        labels_str = [c.split(',') for c in list(data_entry_df['Finding Labels'])]
+        labels_all = encoder.fit_transform(labels_str)
 
         all_df = pd.DataFrame()
 
         all_df['Image_Index'] = data_entry_df['Image Index']
         all_df['Image_Path'] = all_df['Image_Index'].map(all_image_paths.get)
         all_df['Label'] = labels_all.tolist()
+        all_df['Label_Str'] = labels_str
         all_df['Patient_ID'] = data_entry_df['Patient ID']
 
         grouped = bbox_list_df.groupby(by='Image Index').indices
