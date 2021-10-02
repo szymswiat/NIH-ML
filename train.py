@@ -1,6 +1,7 @@
 import logging
 import sys
 import time
+import os
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -50,7 +51,7 @@ def train(cfg: DictConfig):
 
     task = connect_with_task(cfg)
 
-    log_root_dir = Path(task.session.config.get('sdk.storage.log_dir')) / task.task_id
+    log_root_dir = Path(os.path.expandvars(task.session.config.get('sdk.storage.log_dir'))).expanduser() / task.task_id
     checkpoint_dir = log_root_dir / 'checkpoints'
     log_dir = log_root_dir / 'training_logs'
 
@@ -197,7 +198,7 @@ class NIHTrainingLauncher(ArgLauncher):
         cfg_root = Path(args.config_dir)
 
         config = OmegaConf.load(cfg_root / 'train_config.yaml')
-        config.cluster = OmegaConf.load(cfg_root / 'cluster.yaml')
+        config.cluster = OmegaConf.load(cfg_root / 'train_cluster.yaml')
 
         train(config)
 

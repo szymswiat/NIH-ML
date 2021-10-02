@@ -10,5 +10,5 @@ ckpt_file:
 
 
 params:
-  batch_size: 4
-  image_size: 380
+  batch_size: 200
+  image_size: 384

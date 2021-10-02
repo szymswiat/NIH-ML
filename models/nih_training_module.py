@@ -28,7 +28,7 @@ class NIHTrainingModule(pl.LightningModule):
 
         assert self.hparams.net_type in self._VARIANTS
 
-        self._classes = self.hparams.dynamic.classes
+        self._classes = OmegaConf.to_object(self.hparams.dynamic.classes)
         self._num_classes = len(self._classes)
 
         self.last_activation = nn.Sigmoid()
@@ -145,18 +145,26 @@ class NIHTrainingModule(pl.LightningModule):
             self.cml_logger.flush()
 
     def configure_optimizers(self):
-        opt_params = dict(params=self.parameters(),
-                          weight_decay=1e-5)
+        opt: DictConfig = self.hparams.optimizer
 
-        opt = self.hparams.optimizer
-        if opt == 'rmsprop':
-            optimizer = torch.optim.RMSprop(**opt_params, momentum=0.9)
-        elif opt == 'adam':
-            optimizer = torch.optim.Adam(**opt_params)
-        elif opt == 'ranger_lars':
-            optimizer = RangerLars(**opt_params)
+        common_params = dict(
+            params=self.parameters(),
+            lr=opt.get('lr', 0),
+            weight_decay=opt.get('weight_decay', 0)
+        )
+        if opt.type == 'rmsprop':
+            optimizer = torch.optim.RMSprop(**common_params,
+                                            momentum=opt.get('momentum', 0))
+        elif opt.type == 'adam':
+            optimizer = torch.optim.Adam(**common_params)
+        elif opt.type == 'ranger_lars':
+            optimizer = RangerLars(**common_params)
+        elif opt.type == 'sgd':
+            optimizer = torch.optim.SGD(**common_params,
+                                        momentum=opt.get('momentum', 0),
+                                        nesterov=opt.get('nesterov', False))
         else:
-            raise ValueError()
+            raise ValueError('Invalid optimizer type in train_config.yaml.')
 
         return optimizer
 

@@ -9,7 +9,7 @@ cpus_per_node: 8
 gpus_per_node: 4
 #
 # Memory per node [GB].
-mem_per_node: 32
+mem_per_node: 40
 #
 # Name of slurm job and training subdirectories
 job_name: test

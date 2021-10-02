@@ -5,9 +5,6 @@ data:
   # Path to dataset
   dataset_path: /net/archive/groups/plggxrays/NihDataset
 
-  # custom | orig
-  df_prefix: orig
-
   # Split type, defined in NIHDataset
   split_type: official_val_from_test
 
@@ -42,11 +39,11 @@ training:
 hparams:
   epochs: 30
 
-  # eff_net_v2
-  architecture: eff_net_v2
+  # eff_net_v2 | resnet
+  architecture: resnet
 
-  # s | m | l |
-  net_type: s
+  #
+  net_type: resnet50
   pretrained: true
 
   drop_path_rate: 0.2
@@ -58,11 +55,16 @@ hparams:
     - image_size: 384
       dropout_rate: 0.4
       augment_rate: 0.8
-      batch_size: 38
+      batch_size: 120
       epoch_milestone: 0
 
-  # adam | rmsprop | ranger_lars
-  optimizer: ranger_lars
+  # adam | rmsprop | ranger_lars | sgd
+  optimizer:
+    weight_decay: 0.00001
+
+    type: ranger_lars
+    # momentum: 0.9
+    # nesterov: false
 
   lr_initial: 0.01
 
