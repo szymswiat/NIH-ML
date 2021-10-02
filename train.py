@@ -1,5 +1,6 @@
 import logging
 import sys
+import time
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -13,9 +14,9 @@ from callbacks.lr_callbacks import LrDecay, LrWarmup, LrExponential
 from data.nih_data_module import NIHDataModule
 from loggers.clearml_logger import ClearMLLogger
 from models.efficient_net_v2_module import EfficientNetV2Module
+from models.resnet_module import ResNetModule
 from utils.arg_launcher import ArgLauncher
 from utils.misc import to_omega_conf
-import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -133,12 +134,17 @@ def train(cfg: DictConfig):
         classes=cfg.data.classes
     )
 
+    cfg.hparams.dynamic.classes = dm.classes
+    cfg.hparams.dynamic.class_freq = dm.get_train_class_freq()
+
     if cfg.hparams.architecture == 'eff_net_v2':
-        cfg.hparams.dynamic.classes = dm.classes
-        cfg.hparams.dynamic.class_freq = dm.get_train_class_freq()
-        model = EfficientNetV2Module(hparams=cfg.hparams)
+        model_class = EfficientNetV2Module
+    elif cfg.hparams.architecture == 'resnet':
+        model_class = ResNetModule
     else:
         raise ValueError()
+
+    model = model_class(hparams=cfg.hparams)
 
     trainer_params_cluster = dict(
         gpus=cfg.cluster.gpus_per_node,
@@ -168,12 +174,11 @@ def train(cfg: DictConfig):
     # wait for checkpoint to be saved
     time.sleep(5)
 
-    if cfg.hparams.architecture == 'eff_net_v2':
-        best_model_name = Path(max_auc_ckpt_cb.best_model_path)
-        best_model_path = checkpoint_dir / (best_model_name.stem + '.pt')
-        model = EfficientNetV2Module.load_from_checkpoint((checkpoint_dir / best_model_name).as_posix())
-    else:
-        raise ValueError()
+    best_model_name = Path(max_auc_ckpt_cb.best_model_path)
+    best_model_path = checkpoint_dir / (best_model_name.stem + '.pt')
+
+    model = model_class.load_from_checkpoint((checkpoint_dir / best_model_name).as_posix())
+
     if trainer.is_global_zero:
         model.save_to_file(best_model_path)
         task.update_output_model(str(best_model_path), tags=['auroc_best'])
