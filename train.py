@@ -31,7 +31,7 @@ def connect_with_task(cfg: DictConfig) -> clearml.Task:
         task_args.update(dict(continue_last_task=cfg.training.restore_training.task_id))
     else:
         task_args.update(dict(project_name='Nih-classification',
-                              task_name=cfg.cluster.job_name))
+                              task_name=cfg.task_name))
 
     clearml.Task.force_requirements_env_freeze(requirements_file='requirements.txt')
     task = clearml.Task.init(**task_args)
@@ -60,9 +60,9 @@ def train(cfg: DictConfig):
 
     es_cfg = cfg.training.early_stopping
 
-    lr_decay_cfg = cfg.hparams.lr_decay
-    lr_exponential_cfg = cfg.hparams.lr_exponential
-    lr_warmup_cfg = cfg.hparams.lr_warmup
+    lr_decay_cfg = cfg.hparams.optimizer.lr_decay
+    lr_exponential_cfg = cfg.hparams.optimizer.lr_exponential
+    lr_warmup_cfg = cfg.hparams.optimizer.lr_warmup
 
     checkpoint_file = (checkpoint_dir / cfg.training.restore_training.ckpt_name
                        if cfg.training.restore_training.enabled else None)
@@ -101,7 +101,7 @@ def train(cfg: DictConfig):
     lr_decay_cb = LrDecay(
         rate=lr_decay_cfg.rate,
         interval=lr_decay_cfg.interval,
-        initial_lr=cfg.hparams.lr_initial
+        initial_lr=cfg.hparams.optimizer.lr_initial
     )
     if lr_decay_cfg.enabled:
         callbacks.append(lr_decay_cb)
@@ -111,7 +111,7 @@ def train(cfg: DictConfig):
         gamma=lr_exponential_cfg.gamma,
         warmup_steps=lr_warmup_cfg.warmup_steps if lr_warmup_cfg.enabled else None,
         phases=cfg.hparams.phases,
-        initial_lr=cfg.hparams.lr_initial
+        initial_lr=cfg.hparams.optimizer.lr_initial
     )
     if lr_exponential_cfg.enabled:
         callbacks.append(lr_exponential_cb)
@@ -119,7 +119,7 @@ def train(cfg: DictConfig):
     lr_warmup_cb = LrWarmup(
         warmup_steps=lr_warmup_cfg.warmup_steps,
         phases=cfg.hparams.phases,
-        initial_lr=cfg.hparams.lr_initial
+        initial_lr=cfg.hparams.optimizer.lr_initial
     )
     if lr_warmup_cfg.enabled:
         callbacks.append(lr_warmup_cb)
@@ -192,13 +192,19 @@ def train(cfg: DictConfig):
 class NIHTrainingLauncher(ArgLauncher):
 
     def setup_parser(self, parser: ArgumentParser) -> None:
-        parser.add_argument('config_dir', type=str, help='Path to directory with YAML config files.')
+        parser.add_argument('--name',
+                            type=str, default='train',
+                            help='Task name.')
+        parser.add_argument('--config_dir',
+                            type=str, default='config',
+                            help='Path to directory with YAML config files.')
 
     def run(self, args) -> None:
         cfg_root = Path(args.config_dir)
 
         config = OmegaConf.load(cfg_root / 'train_config.yaml')
         config.cluster = OmegaConf.load(cfg_root / 'train_cluster.yaml')
+        config.task_name = args.name
 
         train(config)
 

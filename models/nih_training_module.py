@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from pathlib import Path
-from typing import List, Any
+from typing import List, Any, Dict
 
 import numpy as np
 import plotly.graph_objects as go
@@ -10,14 +10,16 @@ import pytorch_lightning as pl
 import torch
 from clearml import Logger, Task
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import roc_curve, auc, roc_auc_score
+from sklearn.metrics import roc_curve, auc, roc_auc_score, precision_recall_curve
 from torch import nn
 from torchmetrics import AUROC
 from torchmetrics.utilities.data import dim_zero_cat
 
 from losses.focal_loss import FocalLoss
+from metrics.helpers import precision_recall_auc_scores
 from optimizers.over9000 import RangerLars
 from utils.pred_zarr_io import PredZarrWriter
+from metrics import plot_gen
 
 
 class NIHTrainingModule(pl.LightningModule):
@@ -35,17 +37,14 @@ class NIHTrainingModule(pl.LightningModule):
 
         class_weights = self._compute_class_weights(*self.hparams.dynamic.class_freq)
 
-        # self.criterion = nn.BCEWithLogitsLoss(pos_weight=class_weights)
-        self.criterion = FocalLoss(class_weights=class_weights,
-                                   gamma=self.hparams.focal_loss.gamma,
-                                   reduction='mean')
+        self.criterion = self.get_loss(class_weights)
 
         self.val_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
         self.test_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
 
     @abstractmethod
     def forward_derived(self, x: torch.Tensor) -> torch.Tensor:
-        pass
+        raise NotImplementedError()
 
     @property
     def cml_logger(self) -> Logger:
@@ -85,26 +84,15 @@ class NIHTrainingModule(pl.LightningModule):
 
     def validation_epoch_end(self, outputs: List[Any]) -> None:
         self.val_auroc.sync()
-        preds = dim_zero_cat(self.val_auroc.preds).detach().cpu().numpy()
         targets = dim_zero_cat(self.val_auroc.target).detach().cpu().numpy()
+        preds = dim_zero_cat(self.val_auroc.preds).detach().cpu().numpy()
         self.val_auroc.unsync()
 
         self.val_auroc.reset()
 
+        self.report_epoch_metrics(targets, preds, 'val')
+
         auroc_val = roc_auc_score(targets, preds)
-
-        if self.trainer.is_global_zero:
-            self.cml_logger.report_text(msg=f'Val samples count: {len(targets)}.')
-
-            fig = self._create_auroc_fig(preds, targets)
-            self.cml_logger.report_plotly(title='roc_plots',
-                                          series='val',
-                                          figure=fig,
-                                          iteration=self.trainer.current_epoch)
-            self.cml_logger.report_scalar(title='auroc_avg',
-                                          series='val',
-                                          value=auroc_val,
-                                          iteration=self.trainer.current_epoch)
 
         self.log('auroc_avg/val', value=auroc_val, on_epoch=True, on_step=False,
                  logger=False, prog_bar=False)
@@ -122,26 +110,33 @@ class NIHTrainingModule(pl.LightningModule):
 
     def test_epoch_end(self, outputs: List[Any]) -> None:
         self.test_auroc.sync()
-        preds = dim_zero_cat(self.test_auroc.preds).detach().cpu().numpy()
         targets = dim_zero_cat(self.test_auroc.target).detach().cpu().numpy()
+        preds = dim_zero_cat(self.test_auroc.preds).detach().cpu().numpy()
         self.test_auroc.unsync()
 
+        self.report_epoch_metrics(targets, preds, 'test')
+
+    def report_epoch_metrics(self, targets: np.ndarray, preds: np.ndarray, epoch_type: str):
         if self.trainer.is_global_zero:
-            self._write_and_upload_epoch_output_h5(preds, targets)
+            self._write_and_upload_epoch_output_to_zarr(targets, preds)
 
-            self.cml_logger.report_text(msg=f'\nTest samples count: {len(targets)}.')
+            self.cml_logger.report_text(msg=f'\n{epoch_type.capitalize()} samples count: {len(targets)}.')
 
-            fig = self._create_auroc_fig(preds, targets)
-
-            self.cml_logger.report_plotly(title='roc_plots',
-                                          series='test',
-                                          figure=fig,
-                                          iteration=self.trainer.current_epoch)
+            for name, fig in self._create_metric_figures(targets, preds).items():
+                self.cml_logger.report_plotly(title=f'{name}_{epoch_type}',
+                                              series=name,
+                                              figure=fig,
+                                              iteration=self.trainer.current_epoch)
 
             self.cml_logger.report_scalar(title='auroc_avg',
-                                          series='test',
+                                          series=epoch_type,
                                           value=roc_auc_score(targets, preds),
                                           iteration=self.trainer.current_epoch)
+            self.cml_logger.report_scalar(title='aupr_avg',
+                                          series=epoch_type,
+                                          value=precision_recall_auc_scores(targets, preds).mean(),
+                                          iteration=self.trainer.current_epoch)
+
             self.cml_logger.flush()
 
     def configure_optimizers(self):
@@ -149,7 +144,7 @@ class NIHTrainingModule(pl.LightningModule):
 
         common_params = dict(
             params=self.parameters(),
-            lr=opt.get('lr', 0),
+            lr=opt.get('lr_initial', 0),
             weight_decay=opt.get('weight_decay', 0)
         )
         if opt.type == 'rmsprop':
@@ -168,51 +163,47 @@ class NIHTrainingModule(pl.LightningModule):
 
         return optimizer
 
-    def _write_and_upload_epoch_output_h5(self, preds: np.ndarray, targets: np.ndarray):
+    def get_loss(self, class_weights: torch.Tensor) -> nn.Module:
+        loss_cfg: DictConfig = self.hparams.loss
+        if loss_cfg.type == 'bce':
+            return nn.BCEWithLogitsLoss(pos_weight=class_weights)
+        elif loss_cfg.type == 'focal':
+            return FocalLoss(class_weights=class_weights,
+                             gamma=loss_cfg.get('gamma', 2),
+                             reduction='mean')
+        elif loss_cfg.type == 'ml_soft_margin':
+            return nn.MultiLabelSoftMarginLoss(weight=class_weights)
+        else:
+            raise ValueError('Invalid loss type in train_config.yaml.')
+
+    def _write_and_upload_epoch_output_to_zarr(self, targets: np.ndarray, preds: np.ndarray):
         log_dir = Path(self.trainer._default_root_dir)
         log_dir.mkdir(exist_ok=True, parents=True)
 
         with PredZarrWriter(log_dir / 'test_output.zarr') as pzw:
-            pzw.write_pred_output(preds, targets, self._classes)
+            pzw.write_pred_output(targets, preds, self._classes)
 
         self.cml_task.upload_artifact(name='test_prediction_output',
                                       artifact_object=log_dir / 'test_output.zarr')
 
-    def _create_auroc_fig(self, preds: np.ndarray, targets: np.ndarray) -> go.Figure:
-        fig = go.Figure()
-
-        fig.add_shape(type='line', line=dict(dash='dash'),
-                      x0=0, x1=1,
-                      y0=0, y1=1)
-
-        roc_output = []
+    def _create_metric_figures(self, targets: np.ndarray, preds: np.ndarray) -> Dict[str, go.Figure]:
+        roc_curves = []
         for i in range(targets.shape[1]):
-            roc_output.append(roc_curve(targets[..., i], preds[..., i]))
+            roc_curves.append(roc_curve(targets[..., i], preds[..., i]))
 
-        for i, ((fpr, tpr, thresholds), cls) in enumerate(zip(roc_output, self._classes)):
-            cls = cls.replace('_', ' ')
-            thresholds = [f'threshold: {th:.3f}' for th in thresholds]
-            fig.add_trace(
-                go.Scatter(x=fpr, y=tpr, text=thresholds,
-                           name=f'{cls:20} AUC: {auc(fpr, tpr):.3f}', mode='lines'))
+        roc_fig = plot_gen.create_fig(roc_curves, self._classes, ('FPR', 'TPR'), 'AUC', auc, line_mode=0)
 
-        fig.update_layout(
-            xaxis_title='False Positive Rate',
-            yaxis_title='True Positive Rate',
-            yaxis=dict(scaleanchor="x", scaleratio=1),
-            xaxis=dict(constrain='domain'),
-            width=800, height=800,
-            font=dict(family='Courier New', size=10),
-            legend=dict(
-                xanchor='right',
-                yanchor='bottom',
-                x=0.928, y=0.01,
-                traceorder='normal',
-                font=dict(size=9)
-            )
-        )
+        pr_curves = []
+        for i in range(targets.shape[1]):
+            precision, recall, thresholds = precision_recall_curve(targets[..., i], preds[..., i])
+            pr_curves.append((recall, precision, thresholds))
 
-        return fig
+        pr_fig = plot_gen.create_fig(pr_curves, self._classes, ('Recall', 'Precision'), 'AUC', auc, line_mode=1)
+
+        return {
+            'roc': roc_fig,
+            'pr': pr_fig
+        }
 
     @staticmethod
     def _compute_class_weights(samples_per_class: List[float], samples_count: int) -> torch.Tensor:

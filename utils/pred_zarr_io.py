@@ -24,7 +24,7 @@ class PredZarrReader:
         self.root = None
 
     def read_pred_output(self) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-        return self.root['preds'][:], self.root['targets'][:], self.root.attrs['classes']
+        return self.root['targets'][:], self.root['preds'][:], self.root.attrs['classes']
 
 
 class PredZarrWriter:
@@ -47,8 +47,8 @@ class PredZarrWriter:
 
     def write_pred_output(
             self,
-            preds: np.ndarray,
             targets: np.ndarray,
+            preds: np.ndarray,
             classes: List[str]
     ):
         self.root['preds'] = preds
