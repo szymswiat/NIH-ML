@@ -4,10 +4,10 @@ import torch
 from omegaconf import DictConfig
 from timm.models.efficientnet import tf_efficientnetv2_s, tf_efficientnetv2_m, tf_efficientnetv2_l
 
-from models.nih_training_module import NIHTrainingModule
+from modules.nih_classification_module import NIHClassificationModule
 
 
-class EfficientNetV2Module(NIHTrainingModule):
+class NIHEfficientNetV2Module(NIHClassificationModule):
     _VARIANTS = {
         's': tf_efficientnetv2_s,
         'm': tf_efficientnetv2_m,

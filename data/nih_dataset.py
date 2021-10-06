@@ -3,14 +3,14 @@ import json
 import logging
 from itertools import chain
 from pathlib import Path
-from typing import List, Dict, Callable, Tuple
+from typing import List, Dict, Callable
 
 import albumentations as A
 import cv2
 import numpy as np
 import pandas as pd
-import torch
 import yaml
+from pandas import DataFrame
 from sklearn.preprocessing import MultiLabelBinarizer
 from torch.utils.data import Dataset
 
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 class NIHDataset(Dataset):
     CLASSIFICATION_MODE = 'cls'
-    BBOX_MODE = 'bbox'
-    BBOX_ONLY_MODE = 'bbox_only'
+    BBOX_CLASSIFICATION_MODE = 'bbox'
+    BBOX_ART_DETECTION_MODE = 'bbox_art'
 
     # found with notebooks/data_mean_std.ipynb notebook
     MEAN = 0.4986
@@ -49,11 +49,14 @@ class NIHDataset(Dataset):
         if type(df['Label'].iloc[0]) == str:
             df['Label'] = df['Label'].map(lambda x: json.loads(x))
 
-        if mode == self.BBOX_ONLY_MODE:
-            df = df[df.apply(lambda x: x['Bboxes'] != [], axis=1)]
+        # if mode == self.BBOX_ONLY_MODE:
+        #     df = df[df.apply(lambda x: x['Bboxes'] != [], axis=1)]
 
         if filter_by_positive_class is not None:
             df = df[df.apply(lambda row: len(set(row['Label_Str']) & set(filter_by_positive_class)) > 0, axis=1)]
+
+        if mode == self.BBOX_ART_DETECTION_MODE:
+            df = self._extract_bbox_art_df(df)
 
         self._df = df
 
@@ -65,28 +68,39 @@ class NIHDataset(Dataset):
         image = cv2.imread(image_path.as_posix())
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        augmented = self._transforms(image=image)
-        image = augmented['image']
-        return image, dict(
-            label=self._df['Label'].iloc[idx],
-            bboxes=self._df['Bboxes'].iloc[idx]
+        transform_params = dict(
+            image=image
         )
 
-    @staticmethod
-    def collate_labels(data: List[Dict]) -> Tuple[torch.Tensor, ...]:
-        image_list, label_list = zip(*data)
-
-        labels = [torch.tensor(labels['label']) for labels in label_list]
-
-        return torch.stack(image_list).float(), torch.stack(labels).float()
-
-    def collate_fn(self) -> Callable[[List[Dict]], Tuple[torch.Tensor, ...]]:
+        target = None
         if self.mode == self.CLASSIFICATION_MODE:
-            return self.collate_labels
-        elif self.mode == self.BBOX_MODE or self.mode == self.BBOX_ONLY_MODE:
-            raise NotImplementedError()
+            target = self._df['Label'].iloc[idx]
+        elif self.mode == self.BBOX_CLASSIFICATION_MODE:
+            transform_params['bboxes'] = self._df['Bboxes'].iloc[idx]
+        elif self.mode == self.BBOX_ART_DETECTION_MODE:
+            transform_params['bboxes'] = self._df['Bboxes_Art'].iloc[idx]
         else:
             raise ValueError()
+
+        transformed = self._transforms(**transform_params)
+
+        if 'bboxes' in transform_params:
+            target = transformed['bboxes']
+
+        return transformed['image'], target
+
+    def _extract_bbox_art_df(self, all_df: DataFrame) -> DataFrame:
+        df = all_df[all_df.apply(lambda x: x['Bboxes_Art'] != [], axis=1)]
+
+        art_labels_flat = np.array([single_label[-1] for img_labels in df['Bboxes_Art'].to_list()
+                                    for single_label in img_labels], dtype=int)
+        _, counts = np.unique(art_labels_flat, return_counts=True)
+        mean_img_per_art_class = int(counts.mean())
+
+        no_label_img_df = all_df[all_df.apply(lambda x: x['Bboxes_Art'] == [], axis=1)]
+        no_label_img_df = no_label_img_df.sample(mean_img_per_art_class, random_state=0)
+
+        return df.append(no_label_img_df)
 
     @staticmethod
     def parse_dataset_meta(
@@ -97,9 +111,11 @@ class NIHDataset(Dataset):
     ) -> Dict:
         data_entry_path = dataset_path / 'Data_Entry_2017.csv'
         bbox_list_path = dataset_path / 'BBox_List_2017.csv'
+        artifacts_path = dataset_path / 'Artifacts.csv'
 
         data_entry_df = pd.read_csv(data_entry_path)
         bbox_list_df = pd.read_csv(bbox_list_path)
+        artifact_list_df = pd.read_csv(artifacts_path)
 
         logger.info('Scanning image tree...')
         all_image_paths = glob.glob(f'{dataset_path}/images_*/images/*.png', recursive=True)
@@ -117,7 +133,10 @@ class NIHDataset(Dataset):
             if not drop_no_findings_class:
                 classes.insert(0, 'No Finding')
 
+        classes_art = list(sorted(np.unique(artifact_list_df['label'].to_list())))
+
         encoder = MultiLabelBinarizer(classes=classes)
+
         labels_str = [c.split(',') for c in list(data_entry_df['Finding Labels'])]
         labels_all = encoder.fit_transform(labels_str)
 
@@ -129,20 +148,15 @@ class NIHDataset(Dataset):
         all_df['Label_Str'] = labels_str
         all_df['Patient_ID'] = data_entry_df['Patient ID']
 
-        grouped = bbox_list_df.groupby(by='Image Index').indices
+        grouped_rows = bbox_list_df.groupby(by='Image Index').indices
+        all_df['Bboxes'] = all_df['Image_Index'].map(
+            NIHDataset.extract_bboxes_for_img(bbox_list_df, grouped_rows, classes)
+        )
 
-        def extract_bboxes_for_img(img_index: str) -> List:
-            if img_index not in grouped:
-                return []
-            indices = grouped[img_index]
-            rows = bbox_list_df.iloc[indices]
-            rows = rows[rows['Finding Label'].isin(classes)]
-            labels = rows['Finding Label'].to_list()
-            bboxes = rows[['Bbox [x', 'y', 'w', 'h]']].to_numpy()
-            labels = encoder.fit_transform([[x] for x in labels])
-            return [(label.tolist(), bbox.astype(int).tolist()) for label, bbox in zip(labels, bboxes)]
-
-        all_df['Bboxes'] = all_df['Image_Index'].map(extract_bboxes_for_img)
+        grouped_rows = artifact_list_df.groupby(by='image_id').indices
+        all_df['Bboxes_Art'] = all_df['Image_Index'].map(
+            NIHDataset.extract_artifact_bboxes_for_img(artifact_list_df, grouped_rows, classes_art)
+        )
 
         train_val_list = pd.read_csv(dataset_path / 'train_val_list.txt', header=None)
         train_val_list.columns = ['Image_Index']
@@ -154,6 +168,7 @@ class NIHDataset(Dataset):
 
         out_dct = {
             'classes': classes,
+            'classes_art': classes_art,
             'train_df': train_val_df,
             'test_df': test_df
         }
@@ -182,6 +197,49 @@ class NIHDataset(Dataset):
         return out_dct
 
     @staticmethod
+    def extract_bboxes_for_img(
+            bbox_list_df: DataFrame,
+            grouped_rows: Dict[str, List[int]],
+            classes: List[str]
+    ) -> Callable:
+
+        def process(img_index: str) -> List[List[int]]:
+            if img_index not in grouped_rows:
+                return []
+            indices = grouped_rows[img_index]
+            rows = bbox_list_df.iloc[indices]
+            rows = rows[rows['Finding Label'].isin(classes)]
+            labels = rows['Finding Label'].map(lambda x: classes.index(x)).to_numpy(dtype=int)
+
+            bboxes = rows[['Bbox [x', 'y', 'w', 'h]']].to_numpy()
+            bboxes[..., 2:] = bboxes[..., :2] + bboxes[..., 2:]
+
+            bboxes = np.concatenate([bboxes, np.expand_dims(labels, axis=-1)], axis=-1)
+            return [bbox.tolist() for bbox in bboxes]
+
+        return process
+
+    @staticmethod
+    def extract_artifact_bboxes_for_img(
+            artifact_list_df: DataFrame,
+            grouped_rows: Dict[str, List[int]],
+            classes_art: List[str]
+    ) -> Callable:
+
+        def process(img_index: str) -> List:
+            if img_index not in grouped_rows:
+                return []
+            indices = grouped_rows[img_index]
+            rows = artifact_list_df.iloc[indices]
+
+            labels = rows['label'].map(lambda x: classes_art.index(x)).to_numpy(dtype=int)
+            bboxes = np.array(rows['bbox'].map(lambda x: json.loads(x)).to_list(), dtype=int)
+            bboxes = np.concatenate([bboxes, np.expand_dims(labels, axis=-1)], axis=1)
+            return [bbox.tolist() for bbox in bboxes]
+
+        return process
+
+    @staticmethod
     def split_df(df: pd.DataFrame, chunk1_frac=0.95, seed=0):
         chunk1 = df.sample(frac=chunk1_frac, random_state=seed)
         chunk2 = df.drop(chunk1.index)
@@ -197,7 +255,6 @@ class NIHDataset(Dataset):
             drop_no_findings_class=True,
             classes: List[str] = None
     ) -> Dict:
-
         data = NIHDataset.parse_dataset_meta(dataset_path=dataset_path,
                                              split_type=split_type,
                                              classes=classes,

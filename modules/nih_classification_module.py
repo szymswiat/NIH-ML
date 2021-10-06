@@ -1,14 +1,10 @@
-from __future__ import annotations
-
 from abc import abstractmethod
 from pathlib import Path
 from typing import List, Any, Dict
 
 import numpy as np
 import plotly.graph_objects as go
-import pytorch_lightning as pl
 import torch
-from clearml import Logger, Task
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_curve, auc, roc_auc_score, precision_recall_curve
 from torch import nn
@@ -16,17 +12,17 @@ from torchmetrics import AUROC
 from torchmetrics.utilities.data import dim_zero_cat
 
 from losses.focal_loss import FocalLoss
+from metrics import plot_gen
 from metrics.helpers import precision_recall_auc_scores
+from modules.clearml_module import ClearMLModule
 from optimizers.over9000 import RangerLars
 from utils.pred_zarr_io import PredZarrWriter
-from metrics import plot_gen
 
 
-class NIHTrainingModule(pl.LightningModule):
+class NIHClassificationModule(ClearMLModule):
 
     def __init__(self, hparams: DictConfig):
-        super().__init__()
-        self.save_hyperparameters(hparams)
+        super().__init__(hparams)
 
         assert self.hparams.net_type in self._VARIANTS
 
@@ -45,14 +41,6 @@ class NIHTrainingModule(pl.LightningModule):
     @abstractmethod
     def forward_derived(self, x: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()
-
-    @property
-    def cml_logger(self) -> Logger:
-        return self.logger.experiment
-
-    @property
-    def cml_task(self) -> Task:
-        return self.logger.task
 
     def forward(self, x):
         return self.last_activation(self.forward_derived(x))
@@ -90,7 +78,7 @@ class NIHTrainingModule(pl.LightningModule):
 
         self.val_auroc.reset()
 
-        self.report_epoch_metrics(targets, preds, 'val')
+        self._report_epoch_metrics(targets, preds, 'val')
 
         auroc_val = roc_auc_score(targets, preds)
 
@@ -114,30 +102,7 @@ class NIHTrainingModule(pl.LightningModule):
         preds = dim_zero_cat(self.test_auroc.preds).detach().cpu().numpy()
         self.test_auroc.unsync()
 
-        self.report_epoch_metrics(targets, preds, 'test')
-
-    def report_epoch_metrics(self, targets: np.ndarray, preds: np.ndarray, epoch_type: str):
-        if self.trainer.is_global_zero:
-            self._write_and_upload_epoch_output_to_zarr(targets, preds)
-
-            self.cml_logger.report_text(msg=f'\n{epoch_type.capitalize()} samples count: {len(targets)}.')
-
-            for name, fig in self._create_metric_figures(targets, preds).items():
-                self.cml_logger.report_plotly(title=f'{name}_{epoch_type}',
-                                              series=name,
-                                              figure=fig,
-                                              iteration=self.trainer.current_epoch)
-
-            self.cml_logger.report_scalar(title='auroc_avg',
-                                          series=epoch_type,
-                                          value=roc_auc_score(targets, preds),
-                                          iteration=self.trainer.current_epoch)
-            self.cml_logger.report_scalar(title='aupr_avg',
-                                          series=epoch_type,
-                                          value=precision_recall_auc_scores(targets, preds).mean(),
-                                          iteration=self.trainer.current_epoch)
-
-            self.cml_logger.flush()
+        self._report_epoch_metrics(targets, preds, 'test')
 
     def configure_optimizers(self):
         opt: DictConfig = self.hparams.optimizer
@@ -176,6 +141,29 @@ class NIHTrainingModule(pl.LightningModule):
         else:
             raise ValueError('Invalid loss type in train_config.yaml.')
 
+    def _report_epoch_metrics(self, targets: np.ndarray, preds: np.ndarray, epoch_type: str):
+        if self.trainer.is_global_zero:
+            self._write_and_upload_epoch_output_to_zarr(targets, preds)
+
+            self.cml_logger.report_text(msg=f'\n{epoch_type.capitalize()} samples count: {len(targets)}.')
+
+            for name, fig in self._create_metric_figures(targets, preds).items():
+                self.cml_logger.report_plotly(title=f'{name}_{epoch_type}',
+                                              series=name,
+                                              figure=fig,
+                                              iteration=self.trainer.current_epoch)
+
+            self.cml_logger.report_scalar(title='auroc_avg',
+                                          series=epoch_type,
+                                          value=roc_auc_score(targets, preds),
+                                          iteration=self.trainer.current_epoch)
+            self.cml_logger.report_scalar(title='aupr_avg',
+                                          series=epoch_type,
+                                          value=precision_recall_auc_scores(targets, preds).mean(),
+                                          iteration=self.trainer.current_epoch)
+
+            self.cml_logger.flush()
+
     def _write_and_upload_epoch_output_to_zarr(self, targets: np.ndarray, preds: np.ndarray):
         log_dir = Path(self.trainer._default_root_dir)
         log_dir.mkdir(exist_ok=True, parents=True)
@@ -212,22 +200,3 @@ class NIHTrainingModule(pl.LightningModule):
         class_weights = samples_count / (len(class_freq) * class_freq)
 
         return torch.sqrt(class_weights / torch.max(class_weights))
-
-    @classmethod
-    def load_from_file(cls, path: Path) -> NIHTrainingModule:
-        state = torch.load(path.as_posix())
-
-        hparams = state['hparams']
-        state_dict = state['state_dict']
-
-        model = cls(OmegaConf.create(hparams))
-        model.load_state_dict(state_dict)
-
-        return model
-
-    def save_to_file(self, path: Path):
-        state = {
-            'hparams': OmegaConf.to_object(self.hparams),
-            'state_dict': self.state_dict()
-        }
-        torch.save(state, path)

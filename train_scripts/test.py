@@ -8,10 +8,10 @@ import pytorch_lightning as pl
 from omegaconf import OmegaConf, DictConfig
 from pytorch_lightning import Trainer
 
-from data.nih_data_module import NIHDataModule
+from data.nih_classification_data_module import NIHClassificationDataModule
 from loggers.clearml_logger import ClearMLLogger
-from models.efficient_net_v2_module import EfficientNetV2Module
-from models.resnet_module import ResNetModule
+from modules.nih_efficient_net_v2_module import NIHEfficientNetV2Module
+from modules.nih_resnet_module import NIHResNetModule
 from utils.arg_launcher import ArgLauncher
 from utils.misc import to_omega_conf
 
@@ -41,7 +41,7 @@ def test(cfg: DictConfig):
     checkpoint_dir = out_log_root_dir / 'checkpoints'
     checkpoint_file = in_log_root_dir / 'checkpoints' / cfg.ckpt_file
 
-    dm = NIHDataModule(
+    dm = NIHClassificationDataModule(
         dataset_path=data_cfg.dataset_path,
         split_type=data_cfg.split_type,
         phases=OmegaConf.create([dict(
@@ -54,9 +54,9 @@ def test(cfg: DictConfig):
     )
 
     if hparams.architecture == 'eff_net_v2':
-        model_class = EfficientNetV2Module
+        model_class = NIHEfficientNetV2Module
     elif hparams.architecture == 'resnet':
-        model_class = ResNetModule
+        model_class = NIHResNetModule
     else:
         raise ValueError()
 

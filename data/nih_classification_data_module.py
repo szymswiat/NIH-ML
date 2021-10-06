@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import List, Tuple, Any
+from typing import List, Tuple
 
 import albumentations as A
 import numpy as np
@@ -9,7 +9,6 @@ import torch
 from albumentations.pytorch import ToTensorV2
 from omegaconf import ListConfig, DictConfig
 from torch.utils.data import DataLoader
-from torchvision import transforms
 
 import transforms as tfm
 from data.nih_dataset import NIHDataset
@@ -17,7 +16,7 @@ from data.nih_dataset import NIHDataset
 logger = logging.getLogger(__name__)
 
 
-class NIHDataModule(pl.LightningDataModule):
+class NIHClassificationDataModule(pl.LightningDataModule):
 
     def __init__(
             self,
@@ -89,34 +88,27 @@ class NIHDataModule(pl.LightningDataModule):
         ])
 
     def train_dataloader(self) -> DataLoader:
-        train_set = NIHDataset(
-            dataset_path=self._dataset_path,
-            input_df=self._metadata['train_df'],
-            transforms=self._transforms_train
-        )
-        return DataLoader(train_set, batch_size=self._current_phase.batch_size,
-                          shuffle=True, num_workers=self._num_workers,
-                          collate_fn=train_set.collate_fn())
+        return self._create_dataloader('train')
 
     def val_dataloader(self) -> DataLoader:
-        val_set = NIHDataset(
-            dataset_path=self._dataset_path,
-            input_df=self._metadata['val_df'],
-            transforms=self._transforms_val
-        )
-        return DataLoader(val_set, batch_size=self._current_phase.batch_size,
-                          shuffle=False, num_workers=self._num_workers,
-                          collate_fn=val_set.collate_fn())
+        return self._create_dataloader('val')
 
     def test_dataloader(self) -> DataLoader:
-        test_set = NIHDataset(
+        return self._create_dataloader('test')
+
+    def _create_dataloader(self, split: str) -> DataLoader:
+        assert split in ['train', 'val', 'test']
+        shuffle = split == 'train'
+        transforms = self._transforms_train if split == 'train' else self.val_transforms
+        split_set = NIHDataset(
             dataset_path=self._dataset_path,
-            input_df=self._metadata['test_df'],
-            transforms=self._transforms_val
+            input_df=self._metadata[f'{split}_df'],
+            transforms=transforms,
+            mode=NIHDataset.CLASSIFICATION_MODE
         )
-        return DataLoader(test_set, batch_size=self._current_phase.batch_size,
-                          shuffle=False, num_workers=self._num_workers,
-                          collate_fn=test_set.collate_fn())
+        return DataLoader(split_set, batch_size=self._current_phase.batch_size,
+                          shuffle=shuffle, num_workers=self._num_workers,
+                          collate_fn=NIHClassificationDataModule.collate_batch)
 
     def get_train_class_freq(self) -> Tuple[List[float], int]:
         labels = self._metadata['test_df']["Label"].tolist()
@@ -127,31 +119,10 @@ class NIHDataModule(pl.LightningDataModule):
 
         return list(map(lambda x: float(x), samples_per_class)), samples_count
 
+    @staticmethod
+    def collate_batch(batch: List[Tuple[List, List]]) -> Tuple[torch.Tensor, ...]:
+        batch_image_list, target_list = zip(*batch)
 
-class NIHInferenceModuleWrapper(pl.LightningModule):
+        labels = [torch.tensor(target) for target in target_list]
 
-    def __init__(
-            self,
-            model: pl.LightningModule,
-            img_size: Tuple[int, int],
-            min_max_value: Tuple[int, int],
-            mean: float,
-            std: float
-    ):
-        super().__init__()
-
-        self.model = model
-        self.model.eval()
-
-        self._min_max_value = min_max_value
-        self._range_value = abs(min_max_value[0]) + abs(min_max_value[1])
-
-        self._pre_transforms = transforms.Compose([
-            transforms.Resize(size=img_size),
-            tfm.NormalizeTorch(min_max_value, mean=[mean] * 3, std=[std] * 3)
-        ])
-
-    def forward(self, x) -> Any:
-        x2 = torch.stack([self._pre_transforms(img) for img in x])
-
-        return self.model(x2.float())
+        return torch.stack(batch_image_list).float(), torch.stack(labels).float()

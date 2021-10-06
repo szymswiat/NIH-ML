@@ -2,10 +2,10 @@ import torch
 from omegaconf import DictConfig
 from timm.models.resnet import resnet18, resnet34, resnet50, resnet101
 
-from models.nih_training_module import NIHTrainingModule
+from modules.nih_classification_module import NIHClassificationModule
 
 
-class ResNetModule(NIHTrainingModule):
+class NIHResNetModule(NIHClassificationModule):
     _VARIANTS = {
         'resnet18': resnet18,
         'resnet34': resnet34,
