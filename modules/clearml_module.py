@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Dict
 
 import torch
 from clearml import Logger, Task
@@ -24,9 +25,7 @@ class ClearMLModule(LightningModule):
         return self.logger.task
 
     @classmethod
-    def load_from_file(cls, path: Path):
-        state = torch.load(path.as_posix())
-
+    def load_state(cls, state: Dict):
         hparams = state['hparams']
         state_dict = state['state_dict']
 
@@ -35,9 +34,16 @@ class ClearMLModule(LightningModule):
 
         return model
 
-    def save_to_file(self, path: Path):
+    @classmethod
+    def load_state_from_file(cls, path: Path):
+        state = torch.load(path.as_posix())
+
+        return cls.load_state(state)
+
+    def save_state_to_file(self, path: Path, **kwargs):
         state = {
             'hparams': OmegaConf.to_object(self.hparams),
-            'state_dict': self.state_dict()
+            'state_dict': self.state_dict(),
+            **kwargs
         }
         torch.save(state, path)

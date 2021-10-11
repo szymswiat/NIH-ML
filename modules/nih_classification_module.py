@@ -43,6 +43,8 @@ class NIHClassificationModule(ClearMLModule):
         raise NotImplementedError()
 
     def forward(self, x):
+        if self.training:
+            self.eval()
         return self.last_activation(self.forward_derived(x))
 
     def training_step(self, batch, batch_idx):

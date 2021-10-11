@@ -63,8 +63,11 @@ class NIHDataset(Dataset):
     def __len__(self):
         return len(self._df)
 
+    def get_img_path(self, idx: int) -> Path:
+        return Path(self._df['Image_Path'].iloc[idx])
+
     def __getitem__(self, idx):
-        image_path = self._dataset_path / self._df['Image_Path'].iloc[idx]
+        image_path = self._dataset_path / self.get_img_path(idx)
         image = cv2.imread(image_path.as_posix())
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
