@@ -1,4 +1,3 @@
-from abc import abstractmethod
 from pathlib import Path
 from typing import List, Any, Dict
 
@@ -9,27 +8,30 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_curve, auc, roc_auc_score, precision_recall_curve
 from torch import nn
 from torchmetrics import AUROC
+from torchmetrics.metric import jit_distributed_available
 from torchmetrics.utilities.data import dim_zero_cat
 
 from losses.focal_loss import FocalLoss
 from metrics import plot_gen
 from metrics.helpers import precision_recall_auc_scores
-from modules.clearml_module import ClearMLModule
+from modules.base_modules import CommonTrainingModule, LoadableModule
 from optimizers.over9000 import RangerLars
 from utils.pred_zarr_io import PredZarrWriter
 
 
-class NIHClassificationModule(ClearMLModule):
+class NIHClassificationTrainingModule(CommonTrainingModule):
 
-    def __init__(self, hparams: DictConfig):
+    def __init__(
+            self,
+            hparams: DictConfig,
+            model: LoadableModule
+    ):
         super().__init__(hparams)
 
-        assert self.hparams.net_type in self._VARIANTS
+        self.model = model
 
         self._classes = OmegaConf.to_object(self.hparams.dynamic.classes)
         self._num_classes = len(self._classes)
-
-        self.last_activation = nn.Sigmoid()
 
         class_weights = self._compute_class_weights(*self.hparams.dynamic.class_freq)
 
@@ -38,14 +40,8 @@ class NIHClassificationModule(ClearMLModule):
         self.val_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
         self.test_auroc = AUROC(num_classes=self._num_classes, compute_on_step=False)
 
-    @abstractmethod
-    def forward_derived(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
-
     def forward(self, x):
-        if self.training:
-            self.eval()
-        return self.last_activation(self.forward_derived(x))
+        raise AttributeError('Not supported in training module.')
 
     def training_step(self, batch, batch_idx):
         if self.trainer.is_global_zero:
@@ -55,7 +51,7 @@ class NIHClassificationModule(ClearMLModule):
                          logger=True, prog_bar=True, rank_zero_only=True)
 
         x, y_true = batch
-        y_pred = self.forward_derived(x)
+        y_pred = self.model(x, apply_act=False)
 
         loss = self.criterion(y_pred, y_true)
 
@@ -65,18 +61,20 @@ class NIHClassificationModule(ClearMLModule):
 
     def validation_step(self, batch, batch_idx):
         x, y_true = batch
-        y_pred = self.forward_derived(x)
+        y_pred = self.model(x, apply_act=False)
 
         loss = self.criterion(y_pred, y_true)
 
         self.log('loss/val', loss, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
-        self.val_auroc(self.last_activation(y_pred), y_true.to(dtype=torch.int))
+        self.val_auroc(self.model.last_act(y_pred), y_true.to(dtype=torch.int))
 
     def validation_epoch_end(self, outputs: List[Any]) -> None:
-        self.val_auroc.sync()
+        if jit_distributed_available():
+            self.val_auroc.sync()
         targets = dim_zero_cat(self.val_auroc.target).detach().cpu().numpy()
         preds = dim_zero_cat(self.val_auroc.preds).detach().cpu().numpy()
-        self.val_auroc.unsync()
+        if jit_distributed_available():
+            self.val_auroc.unsync()
 
         self.val_auroc.reset()
 
@@ -89,22 +87,31 @@ class NIHClassificationModule(ClearMLModule):
 
     def test_step(self, batch, batch_idx):
         x, y_true = batch
-        y_pred = self.forward_derived(x)
+        y_pred = self.model(x, apply_act=False)
 
         loss = self.criterion(y_pred, y_true)
 
         self.log('loss/test', loss, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
-        self.test_auroc(self.last_activation(y_pred), y_true.to(dtype=torch.int))
+        self.test_auroc(self.model.last_act(y_pred), y_true.to(dtype=torch.int))
 
         return loss
 
     def test_epoch_end(self, outputs: List[Any]) -> None:
-        self.test_auroc.sync()
+        if jit_distributed_available():
+            self.test_auroc.sync()
         targets = dim_zero_cat(self.test_auroc.target).detach().cpu().numpy()
         preds = dim_zero_cat(self.test_auroc.preds).detach().cpu().numpy()
-        self.test_auroc.unsync()
+        if jit_distributed_available():
+            self.test_auroc.unsync()
 
         self._report_epoch_metrics(targets, preds, 'test')
+
+    def on_train_epoch_start(self) -> None:
+        for phase in reversed(self.hparams.phases):
+            if self.current_epoch >= phase.epoch_milestone:
+                if hasattr(self.model, 'set_phase'):
+                    self.model.set_phase(phase)
+                break
 
     def configure_optimizers(self):
         opt: DictConfig = self.hparams.optimizer

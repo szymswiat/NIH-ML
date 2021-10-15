@@ -136,7 +136,8 @@ class NIHDataset(Dataset):
             if not drop_no_findings_class:
                 classes.insert(0, 'No Finding')
 
-        classes_art = list(sorted(np.unique(artifact_list_df['label'].to_list())))
+        classes_art = np.unique(artifact_list_df['label'].to_list())
+        classes_art = [str(x) for x in sorted(classes_art)]
 
         encoder = MultiLabelBinarizer(classes=classes)
 

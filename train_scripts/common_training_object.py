@@ -13,7 +13,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from callbacks.lr_callbacks import LrDecay, LrWarmup, LrExponential
 from loggers.clearml_logger import ClearMLLogger
-from modules.clearml_module import ClearMLModule
+from modules.base_modules import CommonTrainingModule
 from utils.misc import to_omega_conf
 import pytorch_lightning as pl
 
@@ -25,13 +25,24 @@ class CommonTrainingObject:
             project_name: str,
             cfg: DictConfig,
             run_offline: bool,
-            run_cluster: bool
+            run_cluster: bool,
+            run_remote: bool
     ):
         self.project_name = project_name
         self.cfg = cfg
         self.run_offline = run_offline
         self.run_cluster = run_cluster
+        self.run_remote = run_remote
 
+        self.task: Task = None
+        self.paths: DictConfig = None
+        self.callbacks: List[Callback] = None
+        self.model_checkpoint: ModelCheckpoint = None
+        self.data_module: LightningDataModule = None
+        self.training_module: CommonTrainingModule = None
+        self.trainer: Trainer = None
+
+    def setup_training_objects(self):
         self.task = self._connect_with_task()
         self.paths = self._setup_paths()
         self.callbacks = self._setup_callbacks()
@@ -40,9 +51,8 @@ class CommonTrainingObject:
         self.callbacks.append(self.model_checkpoint)
 
         self.data_module = self._setup_data_module()
-        self.model_class = self._setup_model_class()
 
-        self.model = self.model_class(hparams=cfg.hparams)
+        self.training_module = self._setup_training_module()
 
         self.trainer = self._setup_trainer(self.callbacks)
 
@@ -51,15 +61,15 @@ class CommonTrainingObject:
         raise NotImplementedError()
 
     @abstractmethod
-    def _setup_model_class(self) -> type(ClearMLModule):
+    def _setup_training_module(self) -> CommonTrainingModule:
         raise NotImplementedError()
 
     @abstractmethod
     def _setup_model_checkpoint(self) -> Optional[ModelCheckpoint]:
         raise NotImplementedError()
 
-    def _load_model_before_test(self) -> LightningModule:
-        return self.model
+    def _load_training_module_before_test(self) -> LightningModule:
+        return self.training_module
 
     @abstractmethod
     def _upload_output_model(self):
@@ -68,15 +78,17 @@ class CommonTrainingObject:
     def train_and_test(self):
         pl.seed_everything(42)
 
-        self.trainer.fit(self.model, datamodule=self.data_module)
+        self.setup_training_objects()
+
+        self.trainer.fit(self.training_module, datamodule=self.data_module)
 
         # wait for checkpoint to be saved (required when using ddp)
         time.sleep(5)
 
-        model = self._load_model_before_test()
+        self.training_module = self._load_training_module_before_test()
         self._upload_output_model()
 
-        self.trainer.test(model, datamodule=self.data_module)
+        self.trainer.test(self.training_module, datamodule=self.data_module)
 
         self.task.flush()
 
@@ -105,7 +117,7 @@ class CommonTrainingObject:
         self.cfg.training = to_omega_conf(task.connect_configuration(
             OmegaConf.to_object(self.cfg.training), name='training_cfg'))
 
-        if not self.run_offline:
+        if self.run_remote:
             task.execute_remotely(exit_process=True)
 
         return task
@@ -141,7 +153,8 @@ class CommonTrainingObject:
             default_root_dir=self.paths.log_dir,
             resume_from_checkpoint=self.paths.checkpoint_file,
             reload_dataloaders_every_n_epochs=1,
-            log_every_n_steps=25
+            log_every_n_steps=25,
+            # limit_train_batches=10
         )
         if self.run_cluster:
             trainer_params.update(dict(

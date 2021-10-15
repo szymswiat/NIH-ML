@@ -9,7 +9,7 @@ from omegaconf import OmegaConf, DictConfig
 from pytorch_lightning import LightningModule
 
 
-class ClearMLModule(LightningModule):
+class CommonTrainingModule(LightningModule):
 
     def __init__(self, hparams: DictConfig):
         super().__init__()
@@ -24,8 +24,16 @@ class ClearMLModule(LightningModule):
     def cml_task(self) -> Task:
         return self.logger.task
 
+
+class LoadableModule(LightningModule):
+
+    def __init__(self, hparams: DictConfig):
+        super().__init__()
+
+        self.save_hyperparameters(hparams)
+
     @classmethod
-    def load_state(cls, state: Dict):
+    def create_from_state(cls, state: Dict):
         hparams = state['hparams']
         state_dict = state['state_dict']
 
@@ -35,10 +43,10 @@ class ClearMLModule(LightningModule):
         return model
 
     @classmethod
-    def load_state_from_file(cls, path: Path):
+    def load_from_file(cls, path: Path):
         state = torch.load(path.as_posix())
 
-        return cls.load_state(state)
+        return cls.create_from_state(state)
 
     def save_state_to_file(self, path: Path, **kwargs):
         state = {

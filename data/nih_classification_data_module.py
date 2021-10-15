@@ -99,7 +99,7 @@ class NIHClassificationDataModule(pl.LightningDataModule):
     def _create_dataloader(self, split: str) -> DataLoader:
         assert split in ['train', 'val', 'test']
         shuffle = split == 'train'
-        transforms = self._transforms_train if split == 'train' else self.val_transforms
+        transforms = self._transforms_train if split == 'train' else self._transforms_val
         split_set = NIHDataset(
             dataset_path=self._dataset_path,
             input_df=self._metadata[f'{split}_df'],
