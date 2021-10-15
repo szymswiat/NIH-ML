@@ -40,6 +40,9 @@ class NIHClassificationTrainingObject(CommonTrainingObject):
         return training_module
 
     def _load_training_module_before_test(self) -> LightningModule:
+        if self.model_checkpoint is None:
+            return self.training_module
+
         best_ckpt_path = Path(self.model_checkpoint.best_model_path)
 
         checkpoint = pl_load((Path(self.paths.checkpoint_dir) / best_ckpt_path).as_posix())

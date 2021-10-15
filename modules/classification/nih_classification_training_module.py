@@ -78,7 +78,8 @@ class NIHClassificationTrainingModule(CommonTrainingModule):
 
         self.val_auroc.reset()
 
-        self._report_epoch_metrics(targets, preds, 'val')
+        if self.trainer.is_global_zero:
+            self._report_epoch_metrics(targets, preds, 'val')
 
         auroc_val = roc_auc_score(targets, preds)
 
@@ -104,7 +105,9 @@ class NIHClassificationTrainingModule(CommonTrainingModule):
         if jit_distributed_available():
             self.test_auroc.unsync()
 
-        self._report_epoch_metrics(targets, preds, 'test')
+        if self.trainer.is_global_zero:
+            self._report_epoch_metrics(targets, preds, 'test')
+            self._write_and_upload_epoch_output_to_zarr(targets, preds)
 
     def on_train_epoch_start(self) -> None:
         for phase in reversed(self.hparams.phases):
@@ -151,27 +154,24 @@ class NIHClassificationTrainingModule(CommonTrainingModule):
             raise ValueError('Invalid loss type in train_config.yaml.')
 
     def _report_epoch_metrics(self, targets: np.ndarray, preds: np.ndarray, epoch_type: str):
-        if self.trainer.is_global_zero:
-            self._write_and_upload_epoch_output_to_zarr(targets, preds)
+        self.cml_logger.report_text(msg=f'\n{epoch_type.capitalize()} samples count: {len(targets)}.')
 
-            self.cml_logger.report_text(msg=f'\n{epoch_type.capitalize()} samples count: {len(targets)}.')
-
-            for name, fig in self._create_metric_figures(targets, preds).items():
-                self.cml_logger.report_plotly(title=f'{name}_{epoch_type}',
-                                              series=name,
-                                              figure=fig,
-                                              iteration=self.trainer.current_epoch)
-
-            self.cml_logger.report_scalar(title='auroc_avg',
-                                          series=epoch_type,
-                                          value=roc_auc_score(targets, preds),
-                                          iteration=self.trainer.current_epoch)
-            self.cml_logger.report_scalar(title='aupr_avg',
-                                          series=epoch_type,
-                                          value=precision_recall_auc_scores(targets, preds).mean(),
+        for name, fig in self._create_metric_figures(targets, preds).items():
+            self.cml_logger.report_plotly(title=f'{name}_{epoch_type}',
+                                          series=name,
+                                          figure=fig,
                                           iteration=self.trainer.current_epoch)
 
-            self.cml_logger.flush()
+        self.cml_logger.report_scalar(title='auroc_avg',
+                                      series=epoch_type,
+                                      value=roc_auc_score(targets, preds),
+                                      iteration=self.trainer.current_epoch)
+        self.cml_logger.report_scalar(title='aupr_avg',
+                                      series=epoch_type,
+                                      value=precision_recall_auc_scores(targets, preds).mean(),
+                                      iteration=self.trainer.current_epoch)
+
+        self.cml_logger.flush()
 
     def _write_and_upload_epoch_output_to_zarr(self, targets: np.ndarray, preds: np.ndarray):
         log_dir = Path(self.trainer._default_root_dir)

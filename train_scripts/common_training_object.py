@@ -48,7 +48,8 @@ class CommonTrainingObject:
         self.callbacks = self._setup_callbacks()
 
         self.model_checkpoint = self._setup_model_checkpoint()
-        self.callbacks.append(self.model_checkpoint)
+        if self.model_checkpoint is not None:
+            self.callbacks.append(self.model_checkpoint)
 
         self.data_module = self._setup_data_module()
 
