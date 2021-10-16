@@ -6,7 +6,7 @@ nodes: 1
 cpus_per_node: 8
 #
 # Count of GPU units per node.
-gpus_per_node: 2
+gpus_per_node: 1
 #
 # Memory per node [GB].
 mem_per_node: 30

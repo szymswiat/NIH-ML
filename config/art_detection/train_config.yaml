@@ -1,0 +1,67 @@
+#
+# Data options
+#
+data:
+  # Path to dataset
+  dataset_path: /net/archive/groups/plggxrays/NihDataset
+
+
+  # Split type, defined in NIHDataset
+  split_type: official_val_from_test
+
+
+#
+# Training options
+#
+training:
+
+  restore_training:
+    enabled: false
+    ckpt_name:
+    task_id:
+
+  early_stopping:
+    enabled: false
+    patience: 3
+    min_delta: 0.001
+
+
+#
+# Hyperparameters
+#
+hparams:
+  epochs: 20
+
+  phases:
+    - image_size: 384
+      dropout_rate: 0.4
+      augment_rate: 0.8
+      batch_size: 80
+      epoch_milestone: 0
+
+  optimizer:
+    weight_decay: 0.00001
+
+    # adam | rmsprop | ranger_lars | sgd
+    type: ranger_lars
+    # momentum: 0.9
+    # nesterov: false
+
+    lr_initial: 0.01
+
+    lr_decay:
+      enabled: false
+      rate: 0.97
+      interval: 2
+
+    lr_exponential:
+      enabled: true
+      gamma: 0.93
+
+    lr_warmup:
+      enabled: true
+      warmup_steps: 100
+
+  # Keys under 'dynamic' should be empty (will be updated in runtime)
+  dynamic:
+    classes:
