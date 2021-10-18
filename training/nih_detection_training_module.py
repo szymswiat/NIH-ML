@@ -5,12 +5,11 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import LightningModule
 
 from metrics.detection_metric import DetectionMetric
-from modules.base_modules import CommonTrainingModule
+from training.common_training_module import CommonTrainingModule
 from optimizers.over9000 import RangerLars
 
 
 class NIHDetectionTrainingModule(CommonTrainingModule):
-
     LOG_METRICS_CLASS = ['f_score', 'AP', 'total TP', 'total FP']
 
     def __init__(

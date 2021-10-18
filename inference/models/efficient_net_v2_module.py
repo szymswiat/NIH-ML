@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 from timm.models.efficientnet import tf_efficientnetv2_s, tf_efficientnetv2_m, tf_efficientnetv2_l
 from torch.nn import Sigmoid
 
-from modules.base_modules import LoadableModule
+from inference.models.base.loadable_module import LoadableModule
 
 
 class EfficientNetV2Module(LoadableModule):

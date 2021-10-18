@@ -2,8 +2,9 @@ import os
 import time
 from abc import abstractmethod
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Optional
 
+import pytorch_lightning as pl
 from clearml import Task
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
@@ -13,9 +14,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from callbacks.lr_callbacks import LrDecay, LrWarmup, LrExponential
 from loggers.clearml_logger import ClearMLLogger
-from modules.base_modules import CommonTrainingModule
+from training.common_training_module import CommonTrainingModule
 from utils.misc import to_omega_conf
-import pytorch_lightning as pl
 
 
 class CommonTrainingObject:

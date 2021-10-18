@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 from torch.nn import Module
 
-from inference_utils.multi_label_cam import CAMBaseMultiLabel
+from inference.cam.multi_label_cam import CAMBaseMultiLabel
 
 
 class GradCAMPlusPlusMultiLabel(CAMBaseMultiLabel):

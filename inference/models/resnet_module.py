@@ -3,7 +3,7 @@ from omegaconf import DictConfig
 from timm.models.resnet import resnet18, resnet34, resnet50, resnet101
 from torch.nn import Sigmoid
 
-from modules.base_modules import LoadableModule
+from inference.models.base.loadable_module import LoadableModule
 
 
 class ResNetModule(LoadableModule):

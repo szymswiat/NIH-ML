@@ -4,7 +4,7 @@ from pytorch_lightning import LightningModule
 from torch import Tensor
 from torch.nn import Module
 
-from inference_utils.multi_label_cams import GradCAMPlusPlusMultiLabel
+from inference.cam.multi_label_cams import GradCAMPlusPlusMultiLabel
 
 
 class CamPredictorMultiLabel(LightningModule):

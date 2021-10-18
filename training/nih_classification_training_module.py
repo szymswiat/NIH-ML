@@ -11,10 +11,11 @@ from torchmetrics import AUROC
 from torchmetrics.metric import jit_distributed_available
 from torchmetrics.utilities.data import dim_zero_cat
 
+from inference.models.base.loadable_module import LoadableModule
 from losses.focal_loss import FocalLoss
 from metrics import plot_gen
 from metrics.helpers import precision_recall_auc_scores
-from modules.base_modules import CommonTrainingModule, LoadableModule
+from training.common_training_module import CommonTrainingModule
 from optimizers.over9000 import RangerLars
 from utils.pred_zarr_io import PredZarrWriter
 

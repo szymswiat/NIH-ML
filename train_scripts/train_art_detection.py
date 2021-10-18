@@ -10,10 +10,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 
 from data.nih_art_detection_data_module import NIHArtDetectionDataModule
-from modules.base_modules import CommonTrainingModule
-from modules.detection.faster_rcnn_module import FasterRCNNModule
-from modules.detection.nih_detection_training_module import NIHDetectionTrainingModule
-from train_scripts.common_training_object import CommonTrainingObject
+from training.common_training_module import CommonTrainingModule
+from inference.models.faster_rcnn_module import FasterRCNNModule
+from training.nih_detection_training_module import NIHDetectionTrainingModule
+from training.common_training_object import CommonTrainingObject
 from utils.arg_launcher import ArgLauncher
 
 logging.basicConfig(level=logging.INFO)

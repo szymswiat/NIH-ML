@@ -1,16 +1,14 @@
-from typing import Any, Dict, List
+from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
-from pytorch_lightning import LightningModule
 from timm.models.resnet import resnet34
-from torch import Tensor
 from torch.nn import Identity
 from torchvision.models.detection.anchor_utils import AnchorGenerator
 from torchvision.models.detection.faster_rcnn import FasterRCNN, TwoMLPHead, FastRCNNPredictor
 from torchvision.ops import MultiScaleRoIAlign
 
 from data.nih_dataset import NIHDataset
-from modules.base_modules import LoadableModule
+from inference.models.base.loadable_module import LoadableModule
 
 
 class FasterRCNNModule(LoadableModule):

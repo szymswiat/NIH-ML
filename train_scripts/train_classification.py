@@ -9,11 +9,11 @@ from pytorch_lightning import Callback, LightningModule
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from data.nih_classification_data_module import NIHClassificationDataModule
-from modules.classification.efficient_net_v2_module import EfficientNetV2Module
-from modules.classification.nih_classification_training_module import NIHClassificationTrainingModule
-from modules.classification.resnet_module import ResNetModule
-from modules.base_modules import CommonTrainingModule
-from train_scripts.common_training_object import CommonTrainingObject
+from inference.models.efficient_net_v2_module import EfficientNetV2Module
+from training.nih_classification_training_module import NIHClassificationTrainingModule
+from inference.models.resnet_module import ResNetModule
+from training.common_training_module import CommonTrainingModule
+from training.common_training_object import CommonTrainingObject
 from utils.arg_launcher import ArgLauncher
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 
