@@ -7,7 +7,7 @@ from torchvision.models.detection.anchor_utils import AnchorGenerator
 from torchvision.models.detection.faster_rcnn import FasterRCNN, TwoMLPHead, FastRCNNPredictor
 from torchvision.ops import MultiScaleRoIAlign
 
-from data.nih_dataset import NIHDataset
+from data import nih_const
 from inference.models.base.loadable_module import LoadableModule
 
 
@@ -47,8 +47,8 @@ class FasterRCNNModule(LoadableModule):
             box_predictor=box_predictor,
             min_size=image_size,
             max_size=image_size,
-            image_mean=[NIHDataset.MEAN] * 3,
-            image_std=[NIHDataset.STD] * 3
+            image_mean=[nih_const.MEAN] * 3,
+            image_std=[nih_const.STD] * 3
         )
 
     def forward(self, *args) -> Any:

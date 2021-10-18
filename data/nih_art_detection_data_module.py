@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 from typing import List
+from data import nih_const
 
 import albumentations as A
 import pytorch_lightning as pl
@@ -65,7 +66,7 @@ class NIHArtDetectionDataModule(pl.LightningDataModule):
             A.Rotate(limit=12, p=p),
             A.HorizontalFlip(p=p),
             A.VerticalFlip(p=p),
-            tfm.NormalizeAlb(NIHDataset.MIN_MAX_VALUE, mean=[0] * 3, std=[1] * 3),
+            tfm.NormalizeAlb(nih_const.MIN_MAX_VALUE, mean=[0] * 3, std=[1] * 3),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', min_visibility=0.4))
 
@@ -74,7 +75,7 @@ class NIHArtDetectionDataModule(pl.LightningDataModule):
         size = self._current_phase.image_size
         return A.Compose([
             A.Resize(size, size),
-            tfm.NormalizeAlb(NIHDataset.MIN_MAX_VALUE, mean=[0] * 3, std=[1] * 3),
+            tfm.NormalizeAlb(nih_const.MIN_MAX_VALUE, mean=[0] * 3, std=[1] * 3),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', min_visibility=0.4))
 

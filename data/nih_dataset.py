@@ -22,11 +22,6 @@ class NIHDataset(Dataset):
     BBOX_CLASSIFICATION_MODE = 'bbox'
     BBOX_ART_DETECTION_MODE = 'bbox_art'
 
-    # found with notebooks/data_mean_std.ipynb notebook
-    MEAN = 0.4986
-    STD = 0.2500
-    MIN_MAX_VALUE = (0, 255)
-
     SPLIT_OFFICIAL_WITH_VAL = 'official_with_val'
     SPLIT_OFFICIAL_VAL_FROM_TEST = 'official_val_from_test'
     SPLIT_STRATIFIED = 'stratified'
