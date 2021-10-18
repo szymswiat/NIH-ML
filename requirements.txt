@@ -2,6 +2,7 @@ albumentations==1.0.3
 clearml==1.1.2
 detmetric==0.2.0
 efficientnet-pytorch==0.7.1
+hydra-core==1.1.1
 monai==0.7.0
 omegaconf==2.1.1
 opencv-python==4.5.3.56

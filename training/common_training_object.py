@@ -113,8 +113,6 @@ class CommonTrainingObject:
             OmegaConf.to_object(self.cfg.cluster), name='cluster_cfg'))
         self.cfg.hparams = to_omega_conf(task.connect_configuration(
             OmegaConf.to_object(self.cfg.hparams), name='hparams'))
-        self.cfg.data = to_omega_conf(task.connect_configuration(
-            OmegaConf.to_object(self.cfg.data), name='data_cfg'))
         self.cfg.training = to_omega_conf(task.connect_configuration(
             OmegaConf.to_object(self.cfg.training), name='training_cfg'))
 

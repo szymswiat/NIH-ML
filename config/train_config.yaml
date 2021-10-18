@@ -1,0 +1,45 @@
+#
+#
+#
+defaults:
+  #
+  # Cluster config
+  #
+  - cluster: train
+
+  #
+  # Hyperparameters
+  #
+  - hparams: MISSING
+
+  #
+  # Run config
+  #
+  - run_config: remote
+
+  - _self_
+
+#
+# Training options
+#
+training:
+
+  restore_training:
+    enabled: false
+    ckpt_name:
+    task_id:
+
+  early_stopping:
+    enabled: false
+    patience: 3
+    min_delta: 0.001
+
+#
+# Task name
+#
+task_name: train
+
+#
+# Path to dataset
+#
+dataset_path: /net/archive/groups/plggxrays/NihDataset

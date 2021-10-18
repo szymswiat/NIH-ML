@@ -1,21 +1,19 @@
 import logging
-import sys
-from argparse import ArgumentParser
 from pathlib import Path
 from typing import List, Optional
 
-from omegaconf import OmegaConf, DictConfig
+import hydra
+from omegaconf import DictConfig
 from pytorch_lightning import Callback, LightningModule
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.utilities.cloud_io import load as pl_load
 
 from data.nih_classification_data_module import NIHClassificationDataModule
 from inference.models.efficient_net_v2_module import EfficientNetV2Module
-from training.nih_classification_training_module import NIHClassificationTrainingModule
 from inference.models.resnet_module import ResNetModule
 from training.common_training_module import CommonTrainingModule
 from training.common_training_object import CommonTrainingObject
-from utils.arg_launcher import ArgLauncher
-from pytorch_lightning.utilities.cloud_io import load as pl_load
+from training.nih_classification_training_module import NIHClassificationTrainingModule
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,11 +54,11 @@ class NIHClassificationTrainingObject(CommonTrainingObject):
 
     def _setup_data_module(self) -> NIHClassificationDataModule:
         data_module = NIHClassificationDataModule(
-            dataset_path=self.cfg.data.dataset_path,
-            split_type=self.cfg.data.split_type,
+            dataset_path=self.cfg.dataset_path,
+            split_type=self.cfg.hparams.dataset_split_type,
             phases=self.cfg.hparams.phases,
             num_workers=self.cfg.cluster.cpus_per_node,
-            classes=self.cfg.data.classes
+            classes=self.cfg.hparams.classes
         )
 
         self.cfg.hparams.dynamic.classes = data_module.classes
@@ -104,33 +102,17 @@ class NIHClassificationTrainingObject(CommonTrainingObject):
             self.task.update_output_model(weights_path.as_posix(), tags=['auroc_best'])
 
 
-class NIHClassificationTrainingLauncher(ArgLauncher):
-
-    def setup_parser(self, parser: ArgumentParser) -> None:
-        parser.add_argument('--name',
-                            type=str, default='train',
-                            help='Task name.')
-        parser.add_argument('--offline', action='store_true')
-        parser.add_argument('--on-cluster', action='store_true')
-        parser.add_argument('--remote', action='store_true')
-
-    def run(self, args) -> None:
-        cfg_root = Path('config')
-        cls_cfg_root = cfg_root / 'classification'
-
-        config = OmegaConf.load(cls_cfg_root / 'train_config.yaml')
-        config.cluster = OmegaConf.load(cfg_root / 'train_cluster.yaml')
-        config.task_name = args.name
-
-        training_obj = NIHClassificationTrainingObject(
-            project_name='Nih-classification',
-            cfg=config,
-            run_offline=args.offline,
-            run_cluster=args.on_cluster,
-            run_remote=args.remote
-        )
-        training_obj.train_and_test()
+@hydra.main('../config', 'train_config')
+def train(cfg: DictConfig):
+    training_obj = NIHClassificationTrainingObject(
+        project_name='Nih-classification',
+        cfg=cfg,
+        run_offline=cfg.run_config.offline,
+        run_cluster=cfg.run_config.on_cluster,
+        run_remote=cfg.run_config.remote
+    )
+    training_obj.train_and_test()
 
 
 if __name__ == '__main__':
-    NIHClassificationTrainingLauncher(sys.argv[1:]).launch()
+    train()

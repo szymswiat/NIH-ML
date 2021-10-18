@@ -1,20 +1,18 @@
 import logging
-import sys
-from argparse import ArgumentParser
 from pathlib import Path
 from typing import Optional
 
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 
 from data.nih_art_detection_data_module import NIHArtDetectionDataModule
-from training.common_training_module import CommonTrainingModule
 from inference.models.faster_rcnn_module import FasterRCNNModule
-from training.nih_detection_training_module import NIHDetectionTrainingModule
+from training.common_training_module import CommonTrainingModule
 from training.common_training_object import CommonTrainingObject
-from utils.arg_launcher import ArgLauncher
+from training.nih_detection_training_module import NIHDetectionTrainingModule
+import hydra
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,8 +48,8 @@ class NIHArtDetectionTrainingObject(CommonTrainingObject):
 
     def _setup_data_module(self) -> NIHArtDetectionDataModule:
         data_module = NIHArtDetectionDataModule(
-            dataset_path=self.cfg.data.dataset_path,
-            split_type=self.cfg.data.split_type,
+            dataset_path=self.cfg.dataset_path,
+            split_type=self.cfg.hparams.dataset_split_type,
             phases=self.cfg.hparams.phases,
             num_workers=self.cfg.cluster.cpus_per_node
         )
@@ -96,33 +94,17 @@ class NIHArtDetectionTrainingObject(CommonTrainingObject):
             self.task.update_output_model(weights_path.as_posix(), tags=['best_map'])
 
 
-class NIHArtDetectionTrainingLauncher(ArgLauncher):
-
-    def setup_parser(self, parser: ArgumentParser) -> None:
-        parser.add_argument('--name',
-                            type=str, default='train',
-                            help='Task name.')
-        parser.add_argument('--offline', action='store_true')
-        parser.add_argument('--on-cluster', action='store_true')
-        parser.add_argument('--remote', action='store_true')
-
-    def run(self, args) -> None:
-        cfg_root = Path('config')
-        cls_cfg_root = cfg_root / 'art_detection'
-
-        config = OmegaConf.load(cls_cfg_root / 'train_config.yaml')
-        config.cluster = OmegaConf.load(cfg_root / 'train_cluster.yaml')
-        config.task_name = args.name
-
-        training_obj = NIHArtDetectionTrainingObject(
-            project_name='Nih-art-detection',
-            cfg=config,
-            run_offline=args.offline,
-            run_cluster=args.on_cluster,
-            run_remote=args.remote
-        )
-        training_obj.train_and_test()
+@hydra.main('../config', 'train_config')
+def train(cfg: DictConfig):
+    training_obj = NIHArtDetectionTrainingObject(
+        project_name='Nih-art-detection',
+        cfg=cfg,
+        run_offline=cfg.run_config.offline,
+        run_cluster=cfg.run_config.on_cluster,
+        run_remote=cfg.run_config.remote
+    )
+    training_obj.train_and_test()
 
 
 if __name__ == '__main__':
-    NIHArtDetectionTrainingLauncher(sys.argv[1:]).launch()
+    train()

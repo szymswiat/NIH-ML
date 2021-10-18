@@ -1,0 +1,14 @@
+#
+# Run ClearML task locally.
+#
+offline: false
+
+#
+# Upload task to ClearML server and stop execution.
+#
+remote: true
+
+#
+# Attach DDP and GPU according to cluster config files.
+#
+on_cluster: true

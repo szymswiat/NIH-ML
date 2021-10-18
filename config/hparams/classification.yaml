@@ -1,0 +1,69 @@
+epochs: 30
+
+# eff_net_v2 | resnet
+architecture: resnet
+
+#
+net_type: resnet34
+pretrained: true
+
+drop_path_rate: 0.2
+
+phases:
+  - image_size: 384
+    dropout_rate: 0.4
+    augment_rate: 0.8
+    batch_size: 180
+    epoch_milestone: 0
+
+loss:
+  # bce | focal | ml_soft_margin
+  type: focal
+  gamma: 2
+
+
+optimizer:
+  weight_decay: 0.00001
+
+  # adam | rmsprop | ranger_lars | sgd
+  type: ranger_lars
+  # momentum: 0.9
+  # nesterov: false
+
+  lr_initial: 0.01
+
+  lr_decay:
+    enabled: false
+    rate: 0.97
+    interval: 2
+
+  lr_exponential:
+    enabled: true
+    gamma: 0.93
+
+  lr_warmup:
+    enabled: true
+    warmup_steps: 100
+
+# Keys under 'dynamic' should be empty (will be updated in runtime)
+# TODO: should be removed
+dynamic:
+  classes:
+  class_freq:
+
+
+#
+# Split type, defined in NIHDataset
+#
+dataset_split_type: official_val_from_test
+
+#
+#
+#
+classes:
+  - Cardiomegaly
+  - Edema
+  - Effusion
+  - Emphysema
+  - Mass
+  - Pneumothorax
