@@ -60,8 +60,8 @@ class NIHArtDetectionTrainingObject(CommonTrainingObject):
 
     def _setup_model_checkpoint(self) -> Optional[ModelCheckpoint]:
         return ModelCheckpoint(
-            filename='epoch={epoch}_val_map={m_ap/all_val:.3f}_top',
-            monitor='m_ap/all_val',
+            filename='epoch={epoch}_val_map={map/total_avg_val:.3f}_top',
+            monitor='map/total_avg_val',
             mode='max',
             dirpath=self.paths.checkpoint_dir,
             verbose=True,

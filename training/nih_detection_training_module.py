@@ -3,14 +3,13 @@ from typing import Any, List, Tuple, Dict
 import torch
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import LightningModule
+from torchmetrics import MAP
 
-from metrics.detection_metric import DetectionMetric
 from training.common_training_module import CommonTrainingModule
 from optimizers.over9000 import RangerLars
 
 
 class NIHDetectionTrainingModule(CommonTrainingModule):
-    LOG_METRICS_CLASS = ['f_score', 'AP', 'total TP', 'total FP']
 
     def __init__(
             self,
@@ -21,10 +20,10 @@ class NIHDetectionTrainingModule(CommonTrainingModule):
 
         self.classes = OmegaConf.to_object(hparams.dynamic.classes)
 
-        self.detection_metric_val = DetectionMetric(self.classes)
-        self.detection_metric_test = DetectionMetric(self.classes)
-
         self.model = model
+
+        self.val_map = MAP(class_metrics=False, compute_on_step=False)
+        self.test_map = MAP(class_metrics=False, compute_on_step=False)
 
     def forward(self, batch) -> Any:
         return self.model(batch)
@@ -39,40 +38,40 @@ class NIHDetectionTrainingModule(CommonTrainingModule):
         images, targets = self.target_to_frcnn_input(batch)
 
         loss_dict = self.model(images, targets)
+        for loss_name, value in loss_dict.items():
+            self.log(f'loss/{loss_name}_train', value, prog_bar=False, on_step=False, on_epoch=True, sync_dist=True)
+
         loss_dict['total'] = sum(loss for loss in loss_dict.values())
-        # for loss_name, value in loss_dict.items():
-        #     self.log(f'loss/{loss_name}_train', value, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log(f'loss/total_train', loss_dict['total'], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss_dict['total']
 
     def validation_step(self, batch, batch_idx):
         images, targets = self.target_to_frcnn_input(batch)
 
-        outputs = self.model(images)
+        preds = self.model(images)
 
-        self.detection_metric_val(targets, outputs)
+        self.val_map(preds, targets)
 
     def validation_epoch_end(self, outputs):
-        metrics_all, metrics_per_class = self.detection_metric_val.compute()
+        map_metric = self.val_map.compute()
 
-        m_ap_avg = metrics_all["total_map"]
+        self.log(f'map/total_avg_val', map_metric['map'],
+                 prog_bar=False, on_step=False,
+                 on_epoch=True, sync_dist=True, logger=False)
 
-        if self.trainer.is_global_zero:
-            self._report_epoch_metrics(metrics_all, metrics_per_class, 'val')
-        self.log(f'm_ap/all_val', m_ap_avg, prog_bar=False, on_step=False, on_epoch=True, sync_dist=True)
+        self._report_epoch_metrics(map_metric, 'val')
 
     def test_step(self, batch, batch_idx: int):
         images, targets = self.target_to_frcnn_input(batch)
 
         preds = self.model(images)
-
-        self.detection_metric_test(targets, preds)
+        self.test_map.update(preds, targets)
 
     def test_epoch_end(self, outputs):
-        metrics_all, metrics_per_class = self.detection_metric_test.compute()
+        map_metric = self.test_map.compute()
 
-        if self.trainer.is_global_zero:
-            self._report_epoch_metrics(metrics_all, metrics_per_class, 'test')
+        self._report_epoch_metrics(map_metric, 'test')
 
     def configure_optimizers(self):
         opt: DictConfig = self.hparams.optimizer
@@ -108,21 +107,12 @@ class NIHDetectionTrainingModule(CommonTrainingModule):
 
         return batch_image_list, targets
 
-    def _report_epoch_metrics(self, metrics_all: Dict, metrics_per_class: Dict, epoch_type: str):
+    def _report_epoch_metrics(self, map_metric: Dict, epoch_type: str):
         # report average metrics across all classes
-        for m_name, value in metrics_all.items():
-            self.cml_logger.report_scalar(title=m_name,
-                                          series=f'average_{epoch_type}',
+        for m_name, value in map_metric.items():
+            self.cml_logger.report_scalar(title=f'map_{epoch_type}',
+                                          series=m_name,
                                           value=value,
                                           iteration=self.trainer.current_epoch)
-        # report metrics for subsequent classes
-        for mc in metrics_per_class:
-            cls_name = mc.pop('class')
-            for m_name in self.LOG_METRICS_CLASS:
-                value = mc[m_name]
-                self.cml_logger.report_scalar(title=m_name,
-                                              series=f'{cls_name}_{epoch_type}',
-                                              value=value,
-                                              iteration=self.trainer.current_epoch)
 
         self.cml_logger.flush()

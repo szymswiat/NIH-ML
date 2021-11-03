@@ -153,7 +153,7 @@ class CommonTrainingObject:
             resume_from_checkpoint=self.paths.checkpoint_file,
             reload_dataloaders_every_n_epochs=1,
             log_every_n_steps=25,
-            # limit_train_batches=10
+            limit_train_batches=10
         )
         if self.run_cluster:
             trainer_params.update(dict(
