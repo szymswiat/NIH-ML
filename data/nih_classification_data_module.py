@@ -10,7 +10,6 @@ from albumentations.pytorch import ToTensorV2
 from omegaconf import ListConfig, DictConfig
 from torch.utils.data import DataLoader
 
-import transforms as tfm
 from data import nih_const
 from data.nih_dataset import NIHDataset
 
@@ -71,9 +70,9 @@ class NIHClassificationDataModule(pl.LightningDataModule):
             A.Rotate(limit=45, p=p),
             A.HorizontalFlip(p=p),
             A.VerticalFlip(p=p),
-            tfm.NormalizeAlb(nih_const.MIN_MAX_VALUE,
-                             mean=[nih_const.MEAN] * 3,
-                             std=[nih_const.STD] * 3),
+            A.Normalize(max_pixel_value=nih_const.MIN_MAX_VALUE[1],
+                        mean=[nih_const.MEAN] * 3,
+                        std=[nih_const.STD] * 3),
             ToTensorV2()
         ])
 
@@ -82,9 +81,9 @@ class NIHClassificationDataModule(pl.LightningDataModule):
         size = self._current_phase.image_size
         return A.Compose([
             A.Resize(size, size),
-            tfm.NormalizeAlb(nih_const.MIN_MAX_VALUE,
-                             mean=[nih_const.MEAN] * 3,
-                             std=[nih_const.STD] * 3),
+            A.Normalize(max_pixel_value=nih_const.MIN_MAX_VALUE[1],
+                        mean=[nih_const.MEAN] * 3,
+                        std=[nih_const.STD] * 3),
             ToTensorV2()
         ])
 

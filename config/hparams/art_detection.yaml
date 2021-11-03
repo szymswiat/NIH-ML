@@ -1,10 +1,9 @@
 epochs: 20
 
 phases:
-  - image_size: 384
-    dropout_rate: 0.4
-    augment_rate: 0.8
-    batch_size: 80
+  - image_size: 448
+    augment_rate: 0.6
+    batch_size: 60
     epoch_milestone: 0
 
 optimizer:

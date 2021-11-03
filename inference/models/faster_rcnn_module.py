@@ -25,8 +25,8 @@ class FasterRCNNModule(LoadableModule):
         backbone.global_pool = Identity()
 
         anchor_generator = AnchorGenerator(
-            sizes=((32, 64, 128),),
-            aspect_ratios=((0.5, 1.0, 2.0),)
+            sizes=((64, 128, 192),),
+            aspect_ratios=((0.5, 1.0),)
         )
         box_roi_pool = MultiScaleRoIAlign(
             featmap_names=['0'],
