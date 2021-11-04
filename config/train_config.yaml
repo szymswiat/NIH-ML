@@ -10,7 +10,7 @@ defaults:
   #
   # Hyperparameters
   #
-  - hparams: MISSING
+  - hparams:
 
   #
   # Run config

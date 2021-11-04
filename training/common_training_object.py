@@ -158,8 +158,8 @@ class CommonTrainingObject:
         if self.run_cluster:
             trainer_params.update(dict(
                 gpus=self.cfg.cluster.gpus_per_node,
-                num_nodes=self.cfg.cluster.nodes,
-                accelerator='ddp',
+                # num_nodes=self.cfg.cluster.nodes,
+                # accelerator='ddp',
                 deterministic=True,
                 prepare_data_per_node=True,
             ))

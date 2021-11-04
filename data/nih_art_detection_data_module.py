@@ -78,7 +78,7 @@ class NIHArtDetectionDataModule(pl.LightningDataModule):
             A.VerticalFlip(p=p),
             A.Normalize(mean=[0] * 3, std=[1] * 3, max_pixel_value=nih_const.MIN_MAX_VALUE[1], always_apply=True),
             ToTensorV2()
-        ], bbox_params=A.BboxParams(format='pascal_voc'))
+        ], bbox_params=A.BboxParams(format='pascal_voc', min_visibility=0.2))
 
     @property
     def _transforms_val(self) -> A.Compose:
@@ -87,7 +87,7 @@ class NIHArtDetectionDataModule(pl.LightningDataModule):
             A.Resize(size, size),
             A.Normalize(mean=[0] * 3, std=[1] * 3, max_pixel_value=nih_const.MIN_MAX_VALUE[1], always_apply=True),
             ToTensorV2()
-        ], bbox_params=A.BboxParams(format='pascal_voc'))
+        ], bbox_params=A.BboxParams(format='pascal_voc', min_visibility=0.2))
 
     def train_dataloader(self) -> DataLoader:
         return self._create_dataloader('train')

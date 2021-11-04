@@ -99,7 +99,7 @@ class NIHDetectionTrainingModule(CommonTrainingModule):
                 labels = target[..., -1]
                 boxes = target[..., :-1]
             else:
-                labels = torch.empty((0,)).long()
+                labels = torch.empty((0,)).long().to(self.device)
                 boxes = torch.empty((0, 4)).long().to(self.device)
             targets.append(dict(labels=labels, boxes=boxes))
 

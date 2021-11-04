@@ -96,6 +96,11 @@ class NIHArtDetectionTrainingObject(CommonTrainingObject):
 
 @hydra.main('../config', 'train_config')
 def train(cfg: DictConfig):
+
+    cfg = OmegaConf.create(OmegaConf.to_object(cfg))
+    if 'hparams' not in cfg:
+        cfg.hparams = {}
+
     training_obj = NIHArtDetectionTrainingObject(
         project_name='Nih-art-detection',
         cfg=cfg,
