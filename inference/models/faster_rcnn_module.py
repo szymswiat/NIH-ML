@@ -1,7 +1,7 @@
 from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
-from timm.models.resnet import resnet34
+from timm.models.resnet import resnet50, resnet34
 from torch.nn import Identity
 from torchvision.models.detection.anchor_utils import AnchorGenerator
 from torchvision.models.detection.faster_rcnn import FasterRCNN, TwoMLPHead, FastRCNNPredictor
@@ -20,7 +20,7 @@ class FasterRCNNModule(LoadableModule):
 
         image_size = hparams.phases[0].image_size
 
-        backbone = resnet34(pretrained=True, num_classes=0)
+        backbone = resnet50(pretrained=True, num_classes=0)
         backbone.out_channels = backbone.num_features
         backbone.global_pool = Identity()
 
@@ -28,6 +28,12 @@ class FasterRCNNModule(LoadableModule):
             sizes=((64, 128, 192),),
             aspect_ratios=((0.5, 1.0),)
         )
+
+        # r_generator = AnchorGenerator(
+        #     sizes=((64, 128, 192, 256),),
+        #     aspect_ratios=((0.5, 1.0, 2.0),)
+        # ) more anchors
+
         box_roi_pool = MultiScaleRoIAlign(
             featmap_names=['0'],
             output_size=7,
